@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="utf-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>台灣信用卡跨境交易分析站</title>
+  <meta name="description" content="分析台灣各地區信用卡跨境消費趨勢與潛力">
+  <meta name="keywords" content="台灣, 信用卡, 跨境消費, 數據分析, 趨勢, 潛力, Taiwan, Credit Card, Cross-border, Spending, Data Analysis">
+
+  <link href="assets/img/favicon.png" rel="icon">
+  <link href="assets/img/apple-touch-icon.png" rel="apple-touch-icon">
+
+  <link href="https://fonts.googleapis.com" rel="preconnect">
+  <link href="https://fonts.gstatic.com" rel="preconnect" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Poppins:wght@300;400;500;600;700&family=Raleway:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <link href="assets/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
+  <link href="assets/vendor/aos/aos.css" rel="stylesheet">
+  <link href="assets/vendor/glightbox/css/glightbox.min.css" rel="stylesheet">
+  <link href="assets/vendor/swiper/swiper-bundle.min.css" rel="stylesheet">
+
+  <link href="assets/css/main.css" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: 'Noto Sans TC', 'Poppins', sans-serif;
+      background-color: #f4f6f9; 
+    }
+    .section-padding {
+      padding-top: 60px;
+      padding-bottom: 60px;
+    }
+    .section-bg-dark {
+        background-color: #2c3e50; 
+        color: #ecf0f1; 
+    }
+    .section-bg-dark .section-title h2,
+    .section-bg-dark .section-title p,
+    .section-bg-dark h3,
+    .section-bg-dark .form-label { color: #ecf0f1; }
+    
+    .section-bg-dark #data-source p, 
+    .section-bg-dark #data-source li strong { /* 指標名稱和計算公式 */
+        color: #ecf0f1; 
+    }
+    .section-bg-dark #data-source .metric-explanation { /* 指標意義解釋 */
+        font-size: 0.88rem; /* 稍小一點的字體 */
+        margin-left: 20px;
+        margin-bottom: 10px; /* 增加解釋間的間距 */
+        margin-top: 2px; /* 讓解釋和指標名稱稍微分開 */
+        color: #bdc3c7; /* 稍淺的顏色以區分 */
+        line-height: 1.6; /* 增加行高以提高可讀性 */
+        font-weight: 300; /* 較細的字重 */
+    }
+
+
+    .section-bg-dark .table { color: #ecf0f1; }
+    .section-bg-dark .table thead th { border-bottom: 1px solid rgba(255,255,255,0.2); }
+    .section-bg-dark .table tbody tr { border-top: 1px solid rgba(255,255,255,0.1); }
+    .section-bg-dark #keyMetricsCards .stats-item,
+    .section-bg-dark #restricted-content-wrapper.blurred #potentialFocus .icon-box,
+    .section-bg-dark #restricted-content-wrapper:not(.blurred) #potentialFocus .icon-box,
+    .section-bg-dark #potentialFocusPublic .icon-box {
+        background-color: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+    }
+    .section-bg-dark #restricted-content-wrapper.blurred .chart-container {
+         background-color: rgba(0,0,0,0.15);
+    }
+    .section-bg-dark #keyMetricsCards .stats-item h4,
+    .section-bg-dark #potentialFocus .icon-box h5,
+    .section-bg-dark #potentialFocusPublic .icon-box h5,
+    .section-bg-dark #keyMetricsCards .stats-item p,
+    .section-bg-dark #potentialFocus .icon-box p,
+    .section-bg-dark #potentialFocusPublic .icon-box p { color: #ecf0f1; }
+    .section-bg-dark .stats-item p { color: #17a2b8; }
+
+
+    .stats-item {
+        background-color: #ffffff; padding: 25px; border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08); text-align: center; margin-bottom: 20px;
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+    .stats-item:hover { transform: translateY(-5px); box-shadow: 0 8px 25px rgba(0,0,0,0.15); }
+    .stats-item h4 { font-size: 1rem; color: #495057; margin-bottom: 10px; font-weight: 600;}
+    .stats-item p { font-size: 1.8rem; margin-bottom: 0; font-weight: 700; color: #007bff;}
+
+
+    .table-container {
+        max-height: 320px; overflow-y: auto; background-color: #ffffff;
+        padding:20px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+    }
+    .section-bg-dark .table-container { background-color: rgba(0,0,0,0.25); }
+
+    .chart-container {
+        height: 400px; 
+        padding: 20px; 
+        border-radius: 10px; 
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        transition: filter 0.3s ease-in-out, opacity 0.3s ease-in-out;
+    }
+    .section-bg-dark .chart-container { 
+        background-color: rgba(255,255,255,0.05); 
+    }
+
+
+    #potentialFocus, #potentialFocusPublic {
+        transition: filter 0.3s ease-in-out, opacity 0.3s ease-in-out;
+    }
+    #potentialFocus .icon-box, #potentialFocusPublic .icon-box {
+        background-color: #ffffff; padding: 25px; border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08); text-align: center;
+    }
+    #potentialFocus .icon-box h5, #potentialFocusPublic .icon-box h5 { font-size: 1.1rem; margin-top: 12px; font-weight: 600;}
+    #potentialFocus .icon-box p, #potentialFocusPublic .icon-box p { font-size: 0.9rem; }
+
+
+    .form-label { font-size: 0.9rem; margin-bottom: 0.3rem; font-weight: 500; }
+    .form-select-sm, .form-control-sm { font-size: 0.85rem; padding: 0.35rem 0.7rem; }
+    .btn-sm { font-size: 0.85rem; padding: 0.35rem 0.8rem; }
+
+    #loadingIndicator {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background-color: rgba(30,30,30,0.9); color: white; padding: 30px 35px; border-radius: 12px;
+      z-index: 10000; display: none; text-align: center; box-shadow: 0 8px 25px rgba(0,0,0,0.4);
+    }
+    #loadingIndicator .spinner-border { margin-bottom: 18px; width: 3.5rem; height: 3.5rem;}
+    #loadingIndicator span { display: block; font-size: 1.15rem;}
+    .section-title h2 { font-size: 30px; font-weight: 700; }
+    .section-title p { font-size: 1rem; margin-bottom: 30px; color: #6c757d;}
+    .section-bg-dark .section-title p { color: #adb5bd;}
+
+
+    .fetch-error-container { padding: 25px; background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; border-radius: .3rem; }
+    .fetch-error-container h2 { color: #721c24; font-size: 1.5rem; }
+    .fetch-error-container code { background-color: #e9ecef; padding: .2em .4em; border-radius: .2em; }
+
+    #auth-container { margin-left: auto; }
+    #auth-container .btn-auth-action {
+        background-color: #0d6efd; color: white; border: none;
+        padding: 7px 14px; font-size: 0.85rem; border-radius: 4px; margin-left:10px;
+    }
+     #auth-container .btn-auth-action:hover { background-color: #0b5ed7; }
+
+    #user-status { display: flex; align-items: center; color: #fff; }
+    #user-status img { width: 32px; height: 32px; border-radius: 50%; margin-right: 10px; border: 2px solid rgba(255,255,255,0.5); }
+    #user-status span { margin-right: 15px; font-size: 0.85rem; font-weight: 500; }
+    #sign-out-button { font-size: 0.8rem; padding: 4px 9px; }
+    .header:not(.dark-background) #user-status { color: #333; }
+    .header:not(.dark-background) #sign-out-button { border-color: #ccc; color: #333; }
+    .header:not(.dark-background) #sign-out-button:hover { background-color: #f0f0f0; }
+
+
+    #restricted-content-wrapper { position: relative; min-height: 450px; }
+    #restricted-content-wrapper.blurred > .row > div > .chart-container,
+    #restricted-content-wrapper.blurred > .row > div > #potentialFocus {
+        filter: blur(8px); pointer-events: none; opacity: 0.5;
+        transition: filter 0.3s ease-out, opacity 0.3s ease-out;
+    }
+    #restricted-content-overlay {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background-color: rgba(33, 37, 41, 0.88);
+        backdrop-filter: blur(5px);
+        display: none;
+        flex-direction: column; align-items: center; justify-content: center;
+        z-index: 10; border-radius: 8px; text-align: center; padding: 20px; color: #f8f9fa;
+    }
+    #restricted-content-overlay .auth-form input { margin-bottom: 12px; background-color: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: #fff; }
+    #restricted-content-overlay .auth-form input::placeholder { color: #aaa; }
+    #restricted-content-overlay .auth-form .btn { margin-top: 8px; margin-right: 8px; padding: 10px 20px; }
+    #restricted-content-overlay .btn-send-verification {
+        background-color: #ffc107; color: #212529; border: none;
+        padding: 10px 20px; font-size: 0.95rem; border-radius: 5px;
+        transition: background-color 0.3s; margin-top: 15px;
+    }
+    #restricted-content-overlay .btn-send-verification:hover { background-color: #e0a800; }
+    #restricted-content-overlay p.prompt-text { font-size: 1.15rem; font-weight: 500; margin-bottom: 1rem;}
+    #verification-email-sent-message, #auth-error-message { font-size: 0.85rem; margin-top:12px; }
+    .auth-form-toggle { font-size: 0.8rem; color: #adb5bd; cursor: pointer; text-decoration: underline; margin-top:18px;}
+    .auth-form-toggle:hover { color: #fff; }
+    #auth-form-container h4 { font-size: 1.3rem; }
+    #verify-email-prompt-content p.fs-5 { font-size: 1.15rem !important; }
+    #verify-email-prompt-content p.fs-6 { font-size: 0.95rem !important; }
+
+    #regionRankingSection {
+      padding-top: 40px;
+    }
+    /* 資料說明的列表樣式 */
+    #data-source ul {
+        list-style: none;
+        padding-left: 0;
+    }
+    #data-source ul li {
+        margin-bottom: 1rem;
+    }
+    #data-source ul li strong {
+        display: block;
+        margin-bottom: 0.25rem;
+        font-weight: 600;
+    }
+
+  </style>
+</head>
+
+<body class="index-page">
+
+  <div id="loadingIndicator">
+    <div class="spinner-border text-light" role="status">
+      <span class="visually-hidden">載入中...</span>
+    </div>
+    <span>資料載入與處理中...</span>
+  </div>
+
+  <header id="header" class="header d-flex align-items-center fixed-top">
+    <div class="container-fluid container-xl position-relative d-flex align-items-center justify-content-between">
+      <a href="index.html" class="logo d-flex align-items-center me-auto me-xl-0">
+        <h1 class="sitename">台灣信用卡跨境交易分析站</h1>
+      </a>
+      <nav id="navmenu" class="navmenu">
+        <ul>
+          <li><a href="#hero" class="active">首頁</a></li>
+          <li><a href="#dashboard-overview">總覽儀表板</a></li>
+          <li><a href="#advanced-analysis">進階分析</a></li>
+          <li><a href="#potential-stars">潛力之星</a></li>
+          <li><a href="#data-source">資料說明</a></li>
+        </ul>
+        <i class="mobile-nav-toggle d-xl-none bi bi-list"></i>
+      </nav>
+
+      <div id="auth-container" class="d-flex align-items-center">
+        <button id="auth-action-button" class="btn btn-auth-action btn-sm" style="display: none;">登入/註冊</button>
+        <div id="user-status" style="display: none;">
+          <img id="user-photo" src="assets/img/default-avatar.png" alt="User Photo">
+          <span id="user-name"></span>
+          <button id="sign-out-button" class="btn btn-outline-light btn-sm">登出</button>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <main class="main">
+    <section id="hero" class="hero section dark-background">
+      <img src="https://cdn-cw-english.cwg.tw/article/202205/article-62747dec907ab.jpg" alt="台灣夜市熱鬧景象" data-aos="fade-in">
+      <div class="container">
+        <div class="row justify-content-center text-center" data-aos="fade-up" data-aos-delay="100">
+          <div class="col-xl-8 col-lg-10">
+            <h2>台灣信用卡跨境交易分析站</h2>
+            <p>深入洞察台灣各縣市的跨境消費行為、市場趨勢與增長潛力。透過互動式圖表探索數據背後的價值。</p>
+          </div>
+        </div>
+        <div class="row gy-4 mt-5 justify-content-center text-center" data-aos="fade-up" data-aos-delay="200">
+          <div class="col-xl-2 col-md-4" data-aos="fade-up" data-aos-delay="300">
+            <div class="icon-box">
+              <i class="bi bi-graph-up-arrow"></i>
+              <h3><a href="#trendsChartSection">趨勢總覽</a></h3>
+            </div>
+          </div>
+          <div class="col-xl-2 col-md-4" data-aos="fade-up" data-aos-delay="400">
+            <div class="icon-box">
+              <i class="bi bi-table"></i>
+              <h3><a href="#regionRankingSection">數據排行</a></h3>
+            </div>
+          </div>
+          <div class="col-xl-2 col-md-4" data-aos="fade-up" data-aos-delay="500">
+            <div class="icon-box">
+              <i class="bi bi-star-fill"></i>
+              <h3><a href="#potentialStarsTableContainerWrapper">潛力發掘</a></h3>
+            </div>
+          </div>
+          <div class="col-xl-2 col-md-4" data-aos="fade-up" data-aos-delay="600">
+            <div class="icon-box">
+              <i class="bi bi-pie-chart-fill"></i>
+              <h3><a href="#crossBorderRatioSection">跨境佔比</a></h3>
+            </div>
+          </div>
+          <div class="col-xl-2 col-md-4" data-aos="fade-up" data-aos-delay="700">
+            <div class="icon-box">
+              <i class="bi bi-credit-card-2-front-fill"></i>
+              <h3><a href="#avgSpendingPerCardSection">每卡消費</a></h3>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="dashboard-overview" class="section section-padding section-bg-dark">
+      <div class="container section-title" data-aos="fade-up">
+        <h2>總覽儀表板</h2>
+        <p>全國與各區域信用卡跨境消費趨勢總覽</p>
+      </div>
+      <div class="container" data-aos="fade-up" data-aos-delay="100">
+        <div class="row gy-3 mb-4 align-items-end">
+            <div class="col-md-6 col-lg-3 mb-2 mb-lg-0">
+                <label for="yearFilterOverview" class="form-label">選擇年份:</label>
+                <select id="yearFilterOverview" class="form-select form-select-sm">
+                    <option value="ALL">全部年份</option>
+                </select>
+            </div>
+            <div class="col-md-6 col-lg-3 mb-2 mb-lg-0">
+                <label for="monthFilterOverview" class="form-label">選擇月份:</label>
+                <select id="monthFilterOverview" class="form-select form-select-sm">
+                    <option value="ALL">全部月份</option>
+                </select>
+            </div>
+             <div class="col-md-6 col-lg-3 mb-2 mb-lg-0">
+                <label for="regionFilterOverview" class="form-label">選擇地區:</label>
+                <select id="regionFilterOverview" class="form-select form-select-sm">
+                    <option value="ALL">全國</option>
+                </select>
+            </div>
+            <div class="col-md-6 col-lg-3">
+                <button id="resetFiltersOverview" class="btn btn-outline-light btn-sm w-100">重設篩選</button>
+            </div>
+        </div>
+        <div class="row gy-4 mt-3">
+          <div class="col-lg-7 mb-4 mb-lg-0" id="trendsChartSection">
+            <h3 class="mb-3">跨境消費趨勢</h3>
+            <div class="chart-container">
+                <canvas id="trendsChart"></canvas>
+            </div>
+          </div>
+          <div class="col-lg-5">
+            <h3 class="mb-3">關鍵指標</h3>
+            <div id="keyMetricsCards" class="row gy-3"></div>
+          </div>
+        </div>
+
+        <div class="row gy-4 mt-4 justify-content-center" id="regionRankingSection">
+            <div class="col-lg-10 col-xl-8">
+                <h3 class="mt-4 mb-3 text-center">地區消費金額排行 (TOP 10)</h3>
+                <div id="regionRankingTableContainer" class="table-container" style="max-height: none;">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr><th>排名</th><th>地區</th><th>跨境消費金額 (NTD)</th></tr>
+                        </thead>
+                        <tbody id="regionRankingTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="row gy-4 mt-5" id="detailedDataSection" style="display: none;">
+            <div class="col-lg-12">
+                <h3 class="mb-3" id="detailedDataTitle">詳細數據</h3>
+                <div id="detailedDataTableContainer" class="table-container" style="max-height: 400px;">
+                     <table class="table table-sm table-striped table-hover">
+                        <thead>
+                            <tr id="detailedDataHeaders"></tr>
+                        </thead>
+                        <tbody id="detailedDataTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="advanced-analysis" class="section section-padding section-bg-dark">
+        <div class="container section-title" data-aos="fade-up">
+            <h2>進階洞察分析</h2>
+            <p>探索跨境消費結構與個別消費力道</p>
+        </div>
+        <div class="container" data-aos="fade-up" data-aos-delay="100">
+            <div class="row gy-4">
+                <div class="col-lg-6 mb-4 mb-lg-0" id="crossBorderRatioSection">
+                    <h3 class="mb-3">跨境消費金額佔比趨勢</h3>
+                    <div class="chart-container">
+                        <canvas id="crossBorderRatioChart"></canvas>
+                    </div>
+                </div>
+                <div class="col-lg-6" id="avgSpendingPerCardSection">
+                    <h3 class="mb-3">平均每卡跨境消費金額趨勢</h3>
+                    <div class="chart-container">
+                        <canvas id="avgCbSpendingPerCardChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+
+    <section id="potential-stars" class="section section-padding section-bg-dark">
+      <div class="container section-title" data-aos="fade-up">
+        <h2>潛力之星分析</h2>
+        <p>發掘具成長潛力的地區與消費升級趨勢</p>
+      </div>
+      <div class="container" data-aos="fade-up" data-aos-delay="100">
+         <div class="row gy-3 mb-4 align-items-end">
+            <div class="col-md-6 col-lg-4 mb-2 mb-lg-0">
+                <label for="startYearPotential" class="form-label">比較起始年份:</label>
+                <select id="startYearPotential" class="form-select form-select-sm"></select>
+            </div>
+            <div class="col-md-6 col-lg-4 mb-2 mb-lg-0">
+                <label for="endYearPotential" class="form-label">比較結束年份:</label>
+                <select id="endYearPotential" class="form-select form-select-sm"></select>
+            </div>
+            <div class="col-lg-4">
+                <button id="analyzePotentialButton" class="btn btn-primary btn-sm w-100">開始分析</button>
+            </div>
+        </div>
+        <div class="row gy-4 mt-3">
+          <div class="col-lg-12 mb-4" id="potentialStarsTableContainerWrapper">
+            <h3 class="mb-3">潛力之星排行榜</h3>
+            <div id="potentialStarsTableContainer" class="table-container">
+                 <table class="table table-sm table-hover">
+                    <thead>
+                        <tr><th>縣市</th><th>金額增長率 (%)</th><th>筆數增長率 (%)</th><th>ATV (現期 NTD)</th><th>ATV 增長率 (%)</th></tr>
+                    </thead>
+                    <tbody id="potentialStarsTableBody"></tbody>
+                </table>
+            </div>
+          </div>
+
+          <div class="col-lg-12 mt-4">
+            <div id="restricted-content-wrapper">
+              <div class="row">
+                <div class="col-lg-7 mb-4 mb-lg-0">
+                  <h3 class="mb-3">消費升級象限圖 <small class="text-warning">(需登入並驗證Email)</small></h3>
+                  <div class="chart-container" id="consumption-upgrade-chart-container">
+                    <canvas id="consumptionUpgradeChart"></canvas>
+                  </div>
+                </div>
+                <div class="col-lg-5">
+                  <h3 class="mb-3">潛力焦點地區 (Top 3) <small class="text-warning">(需登入並驗證Email)</small></h3>
+                  <div id="potentialFocus" class="row gy-3" style="max-height: 400px; overflow-y: auto;">
+                  </div>
+                </div>
+              </div>
+              <div id="restricted-content-overlay" style="display: none;">
+                <div id="auth-form-container" class="auth-form" style="display: none;">
+                    <p class="prompt-text mb-3">登入以解鎖進階分析</p>
+                    <input type="email" id="auth-email" class="form-control form-control-sm mb-2" placeholder="電子郵件地址" required>
+                    <input type="password" id="auth-password" class="form-control form-control-sm mb-3" placeholder="密碼 (至少6位數)" required>
+                    <div class="mt-3">
+                        <button id="email-signin-button" class="btn btn-primary btn-sm">登入</button>
+                        <button id="email-signup-button" class="btn btn-success btn-sm">註冊新帳號</button>
+                    </div>
+                    <p id="auth-error-message" class="text-danger small"></p>
+                </div>
+                <div id="verify-email-prompt-content" style="display: none;">
+                  <p class="prompt-text mb-2">感謝您的註冊/登入！</p>
+                  <p class="fs-6 mb-3">為查看完整內容，請先驗證您的電子郵件地址。</p>
+                  <button id="send-verification-email-button" class="btn btn-send-verification btn-lg mb-2"><i class="bi bi-envelope-check-fill me-2"></i>寄送驗證郵件</button>
+                  <p id="verification-email-sent-message" class="text-success small mt-2" style="display:none;"></p>
+                  <p class="small mt-2">郵件已寄出？請檢查您的收件匣 (也請查看垃圾郵件匣)，<br>點擊驗證連結後，您可能需要重新整理頁面或重新登入。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="data-source" class="section section-padding section-bg-dark">
+      <div class="container section-title" data-aos="fade-up">
+        <h2>資料說明</h2>
+      </div>
+      <div class="container" data-aos="fade-up" data-aos-delay="100">
+        <p>本站分析數據源於政府公開資料平台，六都十六縣居民跨境消費樣態檔案，統計期間自2014年起，包含台灣各主要地區以信用卡進行消費之相關數據，著重於跨境交易部分。</p>
+        <p class="mt-3"><strong>指標計算方式與意義：</strong></p>
+        <ul>
+            <li>
+                <strong>平均跨境交易金額 (ATV):</strong> 跨境消費總金額 / 跨境消費總筆數
+                <p class="metric-explanation"><em>意義：反映在跨境交易中，平均每一筆交易所花費的金額。此指標的變化可顯示消費單價的提升或下降趨勢，間接反映消費品質或購買商品類型的轉變。</em></p>
+            </li>
+            <li>
+                <strong>金額增長率:</strong> ((當期跨境總金額 - 前期跨境總金額) / 前期跨境總金額) * 100%
+                <p class="metric-explanation"><em>意義：衡量特定期間內（例如年或月）跨境消費總金額相較於前一相同期間的變化百分比。正值表示增長，負值表示衰退，可用來判斷消費市場的擴張或萎縮速度。</em></p>
+            </li>
+            <li>
+                <strong>筆數增長率:</strong> ((當期跨境總筆數 - 前期跨境總筆數) / 前期跨境總筆數) * 100%
+                <p class="metric-explanation"><em>意義：衡量特定期間內跨境交易總筆數相較於前一相同期間的變化百分比。此指標反映消費的活躍程度或頻率的變化。</em></p>
+            </li>
+            <li>
+                <strong>ATV 增長率:</strong> ((當期ATV - 前期ATV) / 前期ATV) * 100% (若前期ATV為0，則視為無限大或特殊標記)
+                <p class="metric-explanation"><em>意義：衡量特定期間內平均每筆跨境交易金額相較於前一相同期間的變化百分比。此為觀察「消費升級」現象的重要指標，若ATV增長率為正，可能代表消費者傾向購買更高單價的商品或服務。</em></p>
+            </li>
+            <li>
+                <strong>跨境消費金額佔比:</strong> (跨境交易金額 / 總交易金額) * 100%
+                <p class="metric-explanation"><em>意義：反映在特定地區或時間段內，跨境消費金額在所有信用卡消費總金額（包含國內與跨境）中所佔的比重。此比例的變化可衡量該地區居民對海外商品或服務的依賴程度或偏好程度的演變。</em></p>
+            </li>
+            <li>
+                <strong>平均每卡跨境消費金額:</strong> 跨境交易金額 / 卡數
+                <p class="metric-explanation"><em>意義：反映在特定期間內，平均每張流通的信用卡所產生的跨境消費金額。此指標可作為衡量單張卡片跨境消費貢獻度或消費強度的參考（請注意：本數據中的「卡數」可能為期間內的累計流通卡數，而非精確的當期活躍跨境消費卡數，解讀時需考量此差異）。</em></p>
+            </li>
+        </ul>
+      </div>
+    </section>
+
+  </main>
+
+  <footer id="footer" class="footer dark-background">
+    <div class="container copyright text-center mt-4">
+      <p>© <span>Copyright</span> <strong class="px-1 sitename">台灣信用卡跨境交易分析站</strong>. <span>All Rights Reserved</span></p>
+      <div class="credits">
+        範本設計 by <a href="https://bootstrapmade.com/">BootstrapMade</a> (Template: Bell) | 數據分析站建置 by (您的名字)
+      </div>
+    </div>
+  </footer>
+
+  <a href="#" id="scroll-top" class="scroll-top d-flex align-items-center justify-content-center"><i class="bi bi-arrow-up-short"></i></a>
+  <div id="preloader"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+
+  <script src="assets/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script src="assets/vendor/aos/aos.js"></script>
+  <script src="assets/vendor/glightbox/js/glightbox.min.js"></script>
+  <script src="assets/vendor/swiper/swiper-bundle.min.js"></script>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+
+  <script src="assets/js/main.js"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>
+
