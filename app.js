@@ -9,6 +9,8 @@ let consumptionUpgradeChartInstance = null;
 let crossBorderRatioChartInstance = null;
 let avgCbSpendingPerCardChartInstance = null;
 
+let verificationTimer = null;
+
 const CSV_FIELD_MAPPING = {
     '年月': 'yearMonth',
     '地區': 'regionCode',
@@ -40,9 +42,34 @@ if (typeof firebase !== 'undefined' && !firebase.apps.length) {
 }
 const auth = typeof firebase !== 'undefined' ? firebase.auth() : null;
 
+
+// ▼▼▼ 修改處：這是新的主刷新函式 ▼▼▼
+/**
+ * 根據當前數據和認證狀態，刷新所有數據驅動的內容 (圖表、表格)
+ */
+function refreshAllDataDrivenContent() {
+    // 確保核心數據已載入，否則跳過刷新
+    if (allCrossBorderData.length === 0) {
+        console.log("數據尚未準備就緒，跳過內容刷新。");
+        return;
+    }
+    console.log("數據已備妥，正在根據當前認證狀態刷新所有內容...");
+
+    // 1. 更新所有公開的圖表與表格
+    updateDashboardOverview();
+    updateAdvancedAnalysisCharts();
+
+    // 2. 更新潛力之星區塊 (此函式內部會自行判斷登入狀態來顯示對應內容)
+    updatePotentialStarsAnalysis();
+    
+    console.log("所有內容刷新完畢。");
+}
+// ▲▲▲ 修改處 ▲▲▲
+
+
 // --- DOMContentLoaded 事件 ---
 document.addEventListener('DOMContentLoaded', () => {
-    console.log("DOM 已載入 (Layout Final v13)，開始初始化應用程式...");
+    console.log("DOM 已載入，開始初始化應用程式...");
     if (auth) {
         initializeAuthUI();
     } else {
@@ -51,10 +78,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (authContainer) authContainer.innerHTML = '<p class="text-danger small">Firebase 初始化失敗</p>';
         updateAuthUI(null);
     }
+    // 載入數據，數據載入完成後會自動觸發第一次內容刷新
     showLoadingIndicator(true, "正在載入數據...");
     loadCSVDataAndInitialize();
+
+    // 初始化不依賴數據的靜態功能
     initializeHeroLinks();
 });
+
 
 // --- Hero Section 連結平滑滾動 ---
 function initializeHeroLinks() {
@@ -62,33 +93,22 @@ function initializeHeroLinks() {
     heroLinks.forEach(link => {
         link.addEventListener('click', function(e) {
             e.preventDefault();
-            const targetId = this.getAttribute('href'); // e.g., "#trendsChartSection"
-            const targetElement = document.querySelector(targetId); // Use querySelector for ID
+            const targetId = this.getAttribute('href');
+            const targetElement = document.querySelector(targetId);
             
             if (targetElement) {
                 const header = document.getElementById('header');
                 const headerHeight = header ? header.offsetHeight : 0;
                 const elementPosition = targetElement.getBoundingClientRect().top;
-                // Calculate the scroll position, considering the fixed header and a small offset
-                const offsetPosition = elementPosition + window.pageYOffset - headerHeight - 20; // 20px additional offset
+                const offsetPosition = elementPosition + window.pageYOffset - headerHeight - 20;
 
                 window.scrollTo({
                     top: offsetPosition,
                     behavior: 'smooth'
                 });
 
-                // Optional: If using AOS, refresh it after scroll to ensure animations trigger correctly
                 if (typeof AOS !== 'undefined') {
-                    setTimeout(() => {
-                        AOS.refresh(); // General refresh might be enough
-                        // For more targeted refresh if needed:
-                        // const aosElementsInTarget = targetElement.querySelectorAll('[data-aos]');
-                        // aosElementsInTarget.forEach(el => {
-                        //     el.classList.remove('aos-animate');
-                        //     void el.offsetWidth; // Force reflow
-                        //     el.classList.add('aos-animate');
-                        // });
-                    }, 400); // Adjust delay as needed for smooth scroll to complete
+                    setTimeout(() => { AOS.refresh(); }, 400);
                 }
             } else {
                 console.warn("Hero link target not found: ", targetId);
@@ -111,34 +131,36 @@ function initializeAuthUI() {
             const overlay = document.getElementById('restricted-content-overlay');
             const authForm = document.getElementById('auth-form-container');
             const verifyForm = document.getElementById('verify-email-prompt-content');
+            
             if (overlay) overlay.style.display = 'flex';
             if (authForm) authForm.style.display = 'block';
             if (verifyForm) verifyForm.style.display = 'none';
+            
             document.getElementById('restricted-content-wrapper')?.classList.add('blurred');
+            
             const authErrorMessage = document.getElementById('auth-error-message');
             if (authErrorMessage) authErrorMessage.textContent = '';
+            
+            if (overlay) {
+                overlay.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
         });
     }
+
     if (signOutButton) signOutButton.addEventListener('click', handleSignOut);
     if (emailSigninButton) emailSigninButton.addEventListener('click', handleEmailPasswordSignIn);
     if (emailSignupButton) emailSignupButton.addEventListener('click', handleEmailPasswordSignUp);
     if (sendVerificationEmailButton) sendVerificationEmailButton.addEventListener('click', handleSendVerificationEmail);
 
+    // ▼▼▼ 修改處：簡化 onAuthStateChanged 的職責 ▼▼▼
     auth.onAuthStateChanged(user => {
+        // 1. 更新純粹的UI元素 (按鈕、用戶名、頭像、霧化效果等)
         updateAuthUI(user);
-        if (user && user.emailVerified) {
-            console.log("使用者已登入且 Email 已驗證:", user.displayName || user.email);
-            if (allCrossBorderData.length > 0) {
-                updatePotentialStarsAnalysis();
-            }
-        } else if (user && !user.emailVerified) {
-            console.log("使用者已登入但 Email 未驗證:", user.displayName || user.email);
-            clearRestrictedContentOnAuthChange();
-        } else {
-            console.log("使用者已登出");
-            clearRestrictedContentOnAuthChange();
-        }
+        
+        // 2. 呼叫主刷新函式，重繪所有數據相關的內容
+        refreshAllDataDrivenContent();
     });
+    // ▲▲▲ 修改處 ▲▲▲
 }
 
 async function handleEmailPasswordSignUp() {
@@ -228,7 +250,7 @@ async function handleSendVerificationEmail(isAfterSignUp = false) {
                 sentMessageEl.classList.add('text-success');
             }
             if (!isAfterSignUp) {
-                alert(`驗證郵件已成功寄至 ${user.email}！請檢查您的收件匣 (包含垃圾郵件)。點擊信中連結完成驗證後，可能需要重新整理頁面或重新登入。`);
+                alert(`驗證郵件已成功寄至 ${user.email}！請檢查您的收件匣 (包含垃圾郵件)。點擊信中連結完成驗證後，請稍待片刻，畫面將自動更新。`);
             }
         } catch (error) {
             console.error("寄送驗證郵件失敗:", error);
@@ -263,20 +285,25 @@ function mapFirebaseErrorToMessage(error) {
 }
 
 function updateAuthUI(user) {
+    if (verificationTimer) {
+        clearInterval(verificationTimer);
+        verificationTimer = null;
+    }
+
     const authActionButton = document.getElementById('auth-action-button');
     const userStatusContainer = document.getElementById('user-status');
     const userNameEl = document.getElementById('user-name');
     const userPhotoEl = document.getElementById('user-photo');
-
     const restrictedContentWrapper = document.getElementById('restricted-content-wrapper');
     const restrictedContentOverlay = document.getElementById('restricted-content-overlay');
     const authFormContainer = document.getElementById('auth-form-container');
     const verifyEmailPromptContent = document.getElementById('verify-email-prompt-content');
     const verificationEmailSentMessage = document.getElementById('verification-email-sent-message');
     const authErrorMessage = document.getElementById('auth-error-message');
+    const consumptionUpgradeAuthNotice = document.getElementById('consumption-upgrade-auth-notice');
+    const potentialFocusAuthNotice = document.getElementById('potential-focus-auth-notice');
 
-    if (!authActionButton || !userStatusContainer || !userNameEl || !userPhotoEl ||
-        !restrictedContentWrapper || !restrictedContentOverlay || !authFormContainer || !verifyEmailPromptContent) {
+    if (!authActionButton || !userStatusContainer || !userNameEl || !userPhotoEl || !restrictedContentWrapper || !restrictedContentOverlay || !authFormContainer || !verifyEmailPromptContent) {
         return;
     }
     if (verificationEmailSentMessage) verificationEmailSentMessage.style.display = 'none';
@@ -293,22 +320,43 @@ function updateAuthUI(user) {
             restrictedContentOverlay.style.display = 'none';
             authFormContainer.style.display = 'none';
             verifyEmailPromptContent.style.display = 'none';
+            if (consumptionUpgradeAuthNotice) consumptionUpgradeAuthNotice.style.display = 'none';
+            if (potentialFocusAuthNotice) potentialFocusAuthNotice.style.display = 'none';
         } else {
             restrictedContentWrapper.classList.add('blurred');
             restrictedContentOverlay.style.display = 'flex';
             authFormContainer.style.display = 'none';
             verifyEmailPromptContent.style.display = 'block';
+            if (consumptionUpgradeAuthNotice) consumptionUpgradeAuthNotice.style.display = 'inline';
+            if (potentialFocusAuthNotice) potentialFocusAuthNotice.style.display = 'inline';
+            verificationTimer = setInterval(async () => {
+                const currentUser = auth.currentUser;
+                if (currentUser) {
+                    await currentUser.reload();
+                    if (currentUser.emailVerified) {
+                        console.log("Email 已成功驗證！正在自動解鎖內容...");
+                        clearInterval(verificationTimer);
+                        updateAuthUI(currentUser);
+                        // 驗證成功後，也刷新一次數據內容
+                        refreshAllDataDrivenContent();
+                    }
+                } else {
+                    clearInterval(verificationTimer);
+                    verificationTimer = null;
+                }
+            }, 3000);
         }
-    } else { // User is not logged in
+    } else {
         authActionButton.style.display = 'block';
         userStatusContainer.style.display = 'none';
         userNameEl.textContent = '';
         userPhotoEl.src = '';
-
         restrictedContentWrapper.classList.add('blurred');
-        restrictedContentOverlay.style.display = 'flex'; // Show overlay by default if not logged in
-        authFormContainer.style.display = 'block';    // Show login/signup form in overlay
+        restrictedContentOverlay.style.display = 'flex';
+        authFormContainer.style.display = 'block';
         verifyEmailPromptContent.style.display = 'none';
+        if (consumptionUpgradeAuthNotice) consumptionUpgradeAuthNotice.style.display = 'inline';
+        if (potentialFocusAuthNotice) potentialFocusAuthNotice.style.display = 'inline';
     }
 }
 
@@ -321,7 +369,6 @@ function clearRestrictedContentOnAuthChange() {
     if (focusContainer) focusContainer.innerHTML = '';
 }
 
-
 // --- 數據載入與處理 ---
 function showLoadingIndicator(show, message = "載入中...") {
     const indicator = document.getElementById('loadingIndicator');
@@ -332,6 +379,7 @@ function showLoadingIndicator(show, message = "載入中...") {
     }
 }
 
+// ▼▼▼ 修改處：數據載入完成後呼叫主刷新函式 ▼▼▼
 async function loadCSVDataAndInitialize() {
     const csvFilePath = 'be7f3ef5e6058d56af3e8173738e4ae1_export.csv';
     try {
@@ -363,7 +411,14 @@ async function loadCSVDataAndInitialize() {
 
                 console.log("數據處理完成，開始初始化網站核心元件...");
                 showLoadingIndicator(true, "正在初始化網站核心元件...");
-                initializeCoreWebsiteComponents();
+                
+                // 初始化篩選器和事件監聽器
+                populateAllFilters();
+                attachAllEventListeners();
+                
+                // 進行第一次內容繪製
+                refreshAllDataDrivenContent();
+                
                 showLoadingIndicator(false);
             },
             error: function(error) {
@@ -384,16 +439,16 @@ async function loadCSVDataAndInitialize() {
         );
     }
 }
+// ▲▲▲ 修改處 ▲▲▲
 
 function displayFetchError(mainMessage, detailMessage, rawErrorMessage = "") {
     const mainContent = document.querySelector('.main');
     if(mainContent) {
         let errorContainer = document.getElementById('fetchErrorContainer');
         if (!errorContainer) {
-            mainContent.innerHTML = ''; // Clear main content to show only the error
+            mainContent.innerHTML = '';
             errorContainer = document.createElement('div');
             errorContainer.id = 'fetchErrorContainer';
-            // Use a more prominent error display within a section
             errorContainer.innerHTML = `
                 <section class="section section-padding">
                     <div class="container">
@@ -420,15 +475,12 @@ function displayFetchError(mainMessage, detailMessage, rawErrorMessage = "") {
                 </section>`;
             mainContent.appendChild(errorContainer);
         } else {
-            // If error container already exists, just update messages
              document.getElementById('fetchErrorMainMessage').innerHTML = `<p class="lead">${mainMessage}</p>`;
              document.getElementById('fetchErrorDetailMessage').innerHTML = detailMessage ? `<p>${detailMessage}</p>` : '';
              document.getElementById('fetchErrorRawMessage').innerHTML = rawErrorMessage ? `<small>詳細錯誤訊息: ${rawErrorMessage}</small>` : '';
         }
     }
-    // No alert here, as the error is displayed on the page
 }
-
 
 function processRawData(rawData) {
     const tempYears = new Set();
@@ -513,93 +565,19 @@ function getRegionNameFromCode(code) {
     return regionMap[code] || `地區 ${code}`;
 }
 
-function initializeCoreWebsiteComponents() {
-    populateAllFilters();
-    attachAllEventListeners();
-    updateDashboardOverview();
-    updateAdvancedAnalysisCharts();
-    
-    const currentUser = auth ? auth.currentUser : null;
-    const potentialData = calculatePotentialDataForAllRegions();
-    renderPotentialStarsTable(potentialData);
-
-    if (currentUser && currentUser.emailVerified) {
-        renderConsumptionUpgradeChart(potentialData);
-        renderPotentialFocusRegions(potentialData);
-    } else {
-        clearRestrictedContentOnAuthChange();
-    }
-}
-
 function populateAllFilters() {
-    const yearSelectors = [
-        document.getElementById('yearFilterOverview'),
-        document.getElementById('startYearPotential'),
-        document.getElementById('endYearPotential')
-    ];
-    const monthSelectors = [ document.getElementById('monthFilterOverview') ];
-    const regionSelectorOverview = document.getElementById('regionFilterOverview');
-
-    yearSelectors.forEach(selector => {
-        if (!selector) return;
-        const isGeneralFilter = selector.id === 'yearFilterOverview';
-        const currentVal = selector.value;
-        selector.innerHTML = isGeneralFilter ? '<option value="ALL">全部年份</option>' : '';
-        uniqueYears.forEach(year => selector.insertAdjacentHTML('beforeend', `<option value="${year}">${year}年</option>`));
-        if (isGeneralFilter && currentVal && Array.from(selector.options).some(opt => opt.value === currentVal)) selector.value = currentVal;
-        else if (isGeneralFilter) selector.value = "ALL";
-    });
-
-    monthSelectors.forEach(selector => {
-        if (!selector) return;
-        const currentVal = selector.value;
-        selector.innerHTML = '<option value="ALL">全部月份</option>';
-        uniqueMonths.forEach(month => selector.insertAdjacentHTML('beforeend', `<option value="${month}">${month}月</option>`));
-        if (currentVal && Array.from(selector.options).some(opt => opt.value === currentVal)) selector.value = currentVal;
-        else selector.value = "ALL";
-    });
-
-    if (regionSelectorOverview) {
-        const currentVal = regionSelectorOverview.value;
-        regionSelectorOverview.innerHTML = '<option value="ALL">全國</option>';
-        const sortedRegionCodes = Object.keys(uniqueRegionCodeToName).sort((a,b) => {
-            const numA = parseInt(a.replace(/\D/g,''));
-            const numB = parseInt(b.replace(/\D/g,''));
-            if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
-            return a.localeCompare(b);
-        });
-        sortedRegionCodes.forEach(code => {
-             regionSelectorOverview.insertAdjacentHTML('beforeend', `<option value="${code}">${uniqueRegionCodeToName[code]}</option>`);
-        });
-        if (currentVal && Array.from(regionSelectorOverview.options).some(opt => opt.value === currentVal)) regionSelectorOverview.value = currentVal;
-        else regionSelectorOverview.value = "ALL";
-    }
-
-    const startYearPotential = document.getElementById('startYearPotential');
-    const endYearPotential = document.getElementById('endYearPotential');
-    if (startYearPotential && endYearPotential && uniqueYears.length > 0) {
-        const defaultStart = uniqueYears.length > 1 ? uniqueYears[uniqueYears.length - 2] : uniqueYears[0];
-        const defaultEnd = uniqueYears[uniqueYears.length - 1];
-        if (Array.from(startYearPotential.options).some(opt => opt.value == defaultStart)) startYearPotential.value = defaultStart;
-        if (Array.from(endYearPotential.options).some(opt => opt.value == defaultEnd)) endYearPotential.value = defaultEnd;
-    }
+    // This function logic remains the same
+    const yearSelectors=[document.getElementById('yearFilterOverview'),document.getElementById('startYearPotential'),document.getElementById('endYearPotential')];const monthSelectors=[document.getElementById('monthFilterOverview')];const regionSelectorOverview=document.getElementById('regionFilterOverview');yearSelectors.forEach(selector=>{if(!selector)return;const isGeneralFilter=selector.id==='yearFilterOverview';const currentVal=selector.value;selector.innerHTML=isGeneralFilter?'<option value="ALL">全部年份</option>':'';uniqueYears.forEach(year=>selector.insertAdjacentHTML('beforeend',`<option value="${year}">${year}年</option>`));if(isGeneralFilter&&currentVal&&Array.from(selector.options).some(opt=>opt.value===currentVal))selector.value=currentVal;else if(isGeneralFilter)selector.value="ALL";});monthSelectors.forEach(selector=>{if(!selector)return;const currentVal=selector.value;selector.innerHTML='<option value="ALL">全部月份</option>';uniqueMonths.forEach(month=>selector.insertAdjacentHTML('beforeend',`<option value="${month}">${month}月</option>`));if(currentVal&&Array.from(selector.options).some(opt=>opt.value===currentVal))selector.value=currentVal;else selector.value="ALL";});if(regionSelectorOverview){const currentVal=regionSelectorOverview.value;regionSelectorOverview.innerHTML='<option value="ALL">全國</option>';const sortedRegionCodes=Object.keys(uniqueRegionCodeToName).sort((a,b)=>{const numA=parseInt(a.replace(/\D/g,''));const numB=parseInt(b.replace(/\D/g,''));if(!isNaN(numA)&&!isNaN(numB)&&numA!==numB)return numA-numB;return a.localeCompare(b);});sortedRegionCodes.forEach(code=>{regionSelectorOverview.insertAdjacentHTML('beforeend',`<option value="${code}">${uniqueRegionCodeToName[code]}</option>`);});if(currentVal&&Array.from(regionSelectorOverview.options).some(opt=>opt.value===currentVal))regionSelectorOverview.value=currentVal;else regionSelectorOverview.value="ALL";}
+    const startYearPotential=document.getElementById('startYearPotential');const endYearPotential=document.getElementById('endYearPotential');if(startYearPotential&&endYearPotential&&uniqueYears.length>0){const defaultStart=uniqueYears.length>1?uniqueYears[uniqueYears.length-2]:uniqueYears[0];const defaultEnd=uniqueYears[uniqueYears.length-1];if(Array.from(startYearPotential.options).some(opt=>opt.value==defaultStart))startYearPotential.value=defaultStart;if(Array.from(endYearPotential.options).some(opt=>opt.value==defaultEnd))endYearPotential.value=defaultEnd;}
 }
 
 function attachAllEventListeners() {
-    document.getElementById('yearFilterOverview')?.addEventListener('change', handleSharedFilterChange);
-    document.getElementById('monthFilterOverview')?.addEventListener('change', handleSharedFilterChange);
-    document.getElementById('regionFilterOverview')?.addEventListener('change', handleSharedFilterChange);
-
-    document.getElementById('resetFiltersOverview')?.addEventListener('click', () => {
-        document.getElementById('yearFilterOverview').value = "ALL";
-        document.getElementById('monthFilterOverview').value = "ALL";
-        document.getElementById('regionFilterOverview').value = "ALL";
-        handleSharedFilterChange();
-    });
-    document.getElementById('analyzePotentialButton')?.addEventListener('click', updatePotentialStarsAnalysis);
+    // This function logic remains the same
+    document.getElementById('yearFilterOverview')?.addEventListener('change',handleSharedFilterChange);document.getElementById('monthFilterOverview')?.addEventListener('change',handleSharedFilterChange);document.getElementById('regionFilterOverview')?.addEventListener('change',handleSharedFilterChange);document.getElementById('resetFiltersOverview')?.addEventListener('click',()=>{document.getElementById('yearFilterOverview').value="ALL";document.getElementById('monthFilterOverview').value="ALL";document.getElementById('regionFilterOverview').value="ALL";handleSharedFilterChange();});document.getElementById('analyzePotentialButton')?.addEventListener('click',updatePotentialStarsAnalysis);
 }
 
 function handleSharedFilterChange() {
+    // This function logic remains the same, it calls the update functions
     updateDashboardOverview();
     updateAdvancedAnalysisCharts();
     const selectedRegionCode = document.getElementById('regionFilterOverview').value;
@@ -615,651 +593,47 @@ function handleSharedFilterChange() {
     }
 }
 
-
-function updateDashboardOverview() {
-    if (allCrossBorderData.length === 0) return;
-    showLoadingIndicator(true, "更新總覽數據...");
-
-    const selectedYear = document.getElementById('yearFilterOverview').value;
-    const selectedMonth = document.getElementById('monthFilterOverview').value;
-    const selectedRegionCode = document.getElementById('regionFilterOverview').value;
-
-    let filteredData = allCrossBorderData;
-    if (selectedYear !== "ALL") filteredData = filteredData.filter(d => d.year == selectedYear);
-    if (selectedMonth !== "ALL") filteredData = filteredData.filter(d => d.month == selectedMonth);
-    if (selectedRegionCode !== "ALL") filteredData = filteredData.filter(d => d.regionCode == selectedRegionCode);
-
-    renderKeyMetricsForOverview(filteredData);
-    renderTrendsChartForOverview(filteredData, selectedYear, selectedMonth, selectedRegionCode);
-    if (selectedRegionCode === "ALL") {
-        renderRegionRankingForOverview(filteredData);
-    } else {
-        const tableBody = document.getElementById('regionRankingTableBody');
-        if (tableBody) tableBody.innerHTML = `<tr><td colspan="3" class="text-center">已選擇地區：${uniqueRegionCodeToName[selectedRegionCode] || selectedRegionCode}</td></tr>`;
-    }
-    showLoadingIndicator(false);
-}
-
-function renderKeyMetricsForOverview(data) {
-    let totalCBAmount = 0;
-    let totalCBTransactions = 0;
-    data.forEach(d => {
-        totalCBAmount += d.crossBorderAmountNTD;
-        totalCBTransactions += d.crossBorderTransactions;
-    });
-    const averageCBTransactionValue = totalCBTransactions > 0 ? (totalCBAmount / totalCBTransactions) : 0;
-
-    const container = document.getElementById('keyMetricsCards');
-    if (!container) return;
-    container.innerHTML = `
-        <div class="col-sm-6 col-lg-12 mb-3">
-            <div class="stats-item">
-                <h4>跨境總消費金額</h4>
-                <p>${totalCBAmount.toLocaleString()} <small>NTD</small></p>
-            </div>
-        </div>
-        <div class="col-sm-6 col-lg-12 mb-3">
-            <div class="stats-item">
-                <h4>跨境總交易筆數</h4>
-                <p>${totalCBTransactions.toLocaleString()}</p>
-            </div>
-        </div>
-        <div class="col-sm-6 col-lg-12 mb-3">
-            <div class="stats-item">
-                <h4>平均跨境交易金額 (ATV)</h4>
-                <p>${averageCBTransactionValue.toLocaleString(undefined, { maximumFractionDigits: 0 })} <small>NTD</small></p>
-            </div>
-        </div>`;
-}
-
-function renderTrendsChartForOverview(data, selectedYear, selectedMonth, selectedRegionCode) {
-    const ctx = document.getElementById('trendsChart')?.getContext('2d');
-    if (!ctx) return;
-
-    let labels = [];
-    let cbAmountSeries = [];
-    let cbTransactionsSeries = [];
-    let chartTitle = "跨境消費趨勢";
-    const currentRegionName = selectedRegionCode === "ALL" ? "全國" : (uniqueRegionCodeToName[selectedRegionCode] || selectedRegionCode);
-    const chartFontColor = '#fff'; 
-
-    if (selectedYear === "ALL" && selectedMonth === "ALL") {
-        chartTitle = `${currentRegionName} - 年度跨境趨勢`;
-        const yearlyData = {};
-        data.forEach(d => {
-            if (!yearlyData[d.year]) yearlyData[d.year] = { amount: 0, transactions: 0 };
-            yearlyData[d.year].amount += d.crossBorderAmountNTD;
-            yearlyData[d.year].transactions += d.crossBorderTransactions;
-        });
-        labels = Object.keys(yearlyData).map(y => parseInt(y)).sort((a, b) => a - b);
-        cbAmountSeries = labels.map(year => yearlyData[year]?.amount || 0);
-        cbTransactionsSeries = labels.map(year => yearlyData[year]?.transactions || 0);
-    } else if (selectedYear !== "ALL" && selectedMonth === "ALL") {
-        chartTitle = `${currentRegionName} - ${selectedYear}年 月度跨境趨勢`;
-        const monthlyData = Array(12).fill(null).map(() => ({ amount: 0, transactions: 0 }));
-        data.filter(d => d.year == selectedYear).forEach(d => {
-            if (d.month >= 1 && d.month <= 12) {
-                monthlyData[d.month - 1].amount += d.crossBorderAmountNTD;
-                monthlyData[d.month - 1].transactions += d.crossBorderTransactions;
-            }
-        });
-        labels = uniqueMonths.map(m => `${selectedYear}/${m.toString().padStart(2,'0')}`);
-        cbAmountSeries = monthlyData.map(monthData => monthData.amount);
-        cbTransactionsSeries = monthlyData.map(monthData => monthData.transactions);
-    } else if (selectedYear !== "ALL" && selectedMonth !== "ALL") {
-        if (selectedRegionCode === "ALL") {
-            chartTitle = `${selectedYear}年${selectedMonth.toString().padStart(2,'0')}月 - 各地區跨境消費金額`;
-            const regionalDataForPeriod = {};
-            data.forEach(d => {
-                const regionName = uniqueRegionCodeToName[d.regionCode] || d.regionCode;
-                if (!regionalDataForPeriod[regionName]) regionalDataForPeriod[regionName] = { amount: 0, transactions: 0 };
-                regionalDataForPeriod[regionName].amount += d.crossBorderAmountNTD;
-                regionalDataForPeriod[regionName].transactions += d.crossBorderTransactions;
-            });
-            const sortedRegions = Object.entries(regionalDataForPeriod).sort(([,a],[,b]) => b.amount - a.amount).slice(0,15);
-            labels = sortedRegions.map(([name,]) => name);
-            cbAmountSeries = sortedRegions.map(([,rData]) => rData.amount);
-            cbTransactionsSeries = sortedRegions.map(([,rData]) => rData.transactions);
-        } else {
-            chartTitle = `${currentRegionName} - ${selectedYear}年${selectedMonth.toString().padStart(2,'0')}月 跨境消費`;
-            labels = [`${selectedYear}/${selectedMonth.toString().padStart(2,'0')}`];
-            cbAmountSeries = [data.reduce((sum, d) => sum + d.crossBorderAmountNTD, 0)];
-            cbTransactionsSeries = [data.reduce((sum, d) => sum + d.crossBorderTransactions, 0)];
-        }
-    } else {
-        labels = ["請選擇更明確的篩選條件"];
-        cbAmountSeries = []; cbTransactionsSeries = [];
-    }
-
-    if (overviewTrendsChartInstance) overviewTrendsChartInstance.destroy();
-    overviewTrendsChartInstance = new Chart(ctx, {
-        type: labels.length > 1 ? 'line' : 'bar',
-        data: {
-            labels: labels,
-            datasets: [
-                {
-                    label: '跨境消費金額 (NTD)', data: cbAmountSeries,
-                    borderColor: 'rgb(54, 162, 235)', backgroundColor: 'rgba(54, 162, 235, 0.5)',
-                    tension: 0.1, yAxisID: 'yAmount',
-                    pointRadius: labels.length <= 12 ? 4 : 2, pointHoverRadius: labels.length <= 12 ? 6 : 4,
-                },
-                {
-                    label: '跨境交易筆數', data: cbTransactionsSeries,
-                    borderColor: 'rgb(255, 99, 132)', backgroundColor: 'rgba(255, 99, 132, 0.5)',
-                    tension: 0.1, yAxisID: 'yTransactions',
-                    pointRadius: labels.length <= 12 ? 4 : 2, pointHoverRadius: labels.length <= 12 ? 6 : 4,
-                    hidden: labels.length > 15
-                }
-            ]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: {
-                title: { display: true, text: chartTitle, font: { size: 14 }, color: chartFontColor },
-                legend: { labels: { color: chartFontColor, boxWidth: 12, font: {size: 10} } }
-            },
-            scales: {
-                x: { ticks: { color: chartFontColor, font: {size: 10} }, grid: { color: 'rgba(255,255,255,0.1)'} },
-                yAmount: {
-                    type: 'linear', display: true, position: 'left',
-                    title: { display: true, text: '金額 (NTD)', color: chartFontColor, font: {size: 10} },
-                    ticks: { color: chartFontColor, font: {size: 10}, callback: v => v.toLocaleString() },
-                    grid: { color: 'rgba(255,255,255,0.1)'}
-                },
-                yTransactions: {
-                    type: 'linear', display: true, position: 'right',
-                    title: { display: true, text: '筆數', color: chartFontColor, font: {size: 10} },
-                    ticks: { color: chartFontColor, font: {size: 10}, callback: v => v.toLocaleString() },
-                    grid: { drawOnChartArea: false },
-                }
-            }
-        }
-    });
-}
-
-function renderRegionRankingForOverview(data) {
-    const tableBody = document.getElementById('regionRankingTableBody');
-    if (!tableBody) return;
-    tableBody.innerHTML = '';
-
-    const aggregatedByRegion = {};
-    data.forEach(d => {
-        if (!uniqueRegionCodeToName[d.regionCode]) return;
-        const regionName = uniqueRegionCodeToName[d.regionCode];
-        if (!aggregatedByRegion[d.regionCode]) {
-            aggregatedByRegion[d.regionCode] = { name: regionName, cbAmount: 0 };
-        }
-        aggregatedByRegion[d.regionCode].cbAmount += d.crossBorderAmountNTD;
-    });
-
-    const rankedRegions = Object.values(aggregatedByRegion)
-        .sort((a, b) => b.cbAmount - a.cbAmount)
-        .slice(0, 10);
-
-    if (rankedRegions.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="3" class="text-center">此篩選條件下無地區數據可供排行。</td></tr>';
-        return;
-    }
-    rankedRegions.forEach((region, index) => {
-        tableBody.insertAdjacentHTML('beforeend', `<tr><td>${index + 1}</td><td>${region.name}</td><td>${region.cbAmount.toLocaleString()}</td></tr>`);
-    });
-}
-
-function renderDetailedDataTable(regionCode) {
-    const tableHeadersContainer = document.getElementById('detailedDataHeaders');
-    const tableBodyContainer = document.getElementById('detailedDataTableBody');
-    if (!tableHeadersContainer || !tableBodyContainer) return;
-
-    tableHeadersContainer.innerHTML = '';
-    tableBodyContainer.innerHTML = '';
-
-    const selectedYear = document.getElementById('yearFilterOverview').value;
-    const selectedMonth = document.getElementById('monthFilterOverview').value;
-
-    let dataForTable = allCrossBorderData.filter(d => d.regionCode === regionCode);
-    if (selectedYear !== "ALL") dataForTable = dataForTable.filter(d => d.year == selectedYear);
-    if (selectedMonth !== "ALL") dataForTable = dataForTable.filter(d => d.month == selectedMonth);
-
-    if (dataForTable.length === 0) {
-        tableBodyContainer.innerHTML = '<tr><td colspan="7" class="text-center">此篩選條件下無詳細數據。</td></tr>';
-        tableHeadersContainer.innerHTML = '<th>年月</th><th>卡數</th><th>總筆數</th><th>總金額(NTD)</th><th>跨境筆數</th><th>跨境金額(NTD)</th><th>跨境ATV(NTD)</th>';
-        return;
-    }
-
-    tableHeadersContainer.innerHTML = '<th>年月</th><th>卡數</th><th>總筆數</th><th>總金額(NTD)</th><th>跨境筆數</th><th>跨境金額(NTD)</th><th>跨境ATV(NTD)</th>';
-
-    dataForTable.sort((a,b) => (a.year === b.year) ? a.month - b.month : a.year - b.year)
-    .forEach(row => {
-        const atv = row.crossBorderTransactions > 0 ? (row.crossBorderAmountNTD / row.crossBorderTransactions) : 0;
-        const tr = `<tr>
-            <td>${row.year}/${row.month.toString().padStart(2,'0')}</td>
-            <td>${row.cardCount.toLocaleString()}</td>
-            <td>${row.totalTransactions.toLocaleString()}</td>
-            <td>${row.totalAmountNTD.toLocaleString()}</td>
-            <td>${row.crossBorderTransactions.toLocaleString()}</td>
-            <td>${row.crossBorderAmountNTD.toLocaleString()}</td>
-            <td>${atv.toLocaleString(undefined, {maximumFractionDigits: 0})}</td>
-        </tr>`;
-        tableBodyContainer.insertAdjacentHTML('beforeend', tr);
-    });
-}
-
-// --- 新增的進階分析圖表函數 ---
-function updateAdvancedAnalysisCharts() {
-    if (allCrossBorderData.length === 0) return;
-    showLoadingIndicator(true, "更新進階分析圖表...");
-
-    const selectedYear = document.getElementById('yearFilterOverview').value;
-    const selectedMonth = document.getElementById('monthFilterOverview').value;
-    const selectedRegionCode = document.getElementById('regionFilterOverview').value;
-
-    let filteredData = allCrossBorderData;
-    if (selectedYear !== "ALL") filteredData = filteredData.filter(d => d.year == selectedYear);
-    if (selectedMonth !== "ALL") filteredData = filteredData.filter(d => d.month == selectedMonth);
-    if (selectedRegionCode !== "ALL") filteredData = filteredData.filter(d => d.regionCode == selectedRegionCode);
-
-    renderCrossBorderRatioChart(filteredData, selectedYear, selectedMonth, selectedRegionCode);
-    renderAvgCbSpendingPerCardChart(filteredData, selectedYear, selectedMonth, selectedRegionCode);
-    showLoadingIndicator(false);
-}
-
-function renderCrossBorderRatioChart(data, selectedYear, selectedMonth, selectedRegionCode) {
-    const ctx = document.getElementById('crossBorderRatioChart')?.getContext('2d');
-    if (!ctx) return;
-
-    let labels = [];
-    let ratioSeries = [];
-    let chartTitle = "跨境消費金額佔總消費金額比例";
-    const currentRegionName = selectedRegionCode === "ALL" ? "全國" : (uniqueRegionCodeToName[selectedRegionCode] || selectedRegionCode);
-    const chartFontColor = '#fff'; 
-
-    if (selectedYear === "ALL" && selectedMonth === "ALL") {
-        chartTitle = `${currentRegionName} - 年度跨境消費佔比趨勢`;
-        const yearlyData = {};
-        data.forEach(d => {
-            if (!yearlyData[d.year]) yearlyData[d.year] = { cbAmount: 0, totalAmount: 0 };
-            yearlyData[d.year].cbAmount += d.crossBorderAmountNTD;
-            yearlyData[d.year].totalAmount += d.totalAmountNTD;
-        });
-        labels = Object.keys(yearlyData).map(y => parseInt(y)).sort((a, b) => a - b);
-        ratioSeries = labels.map(year => {
-            const yearData = yearlyData[year];
-            return (yearData.totalAmount > 0) ? (yearData.cbAmount / yearData.totalAmount) * 100 : 0;
-        });
-    } else if (selectedYear !== "ALL" && selectedMonth === "ALL") {
-        chartTitle = `${currentRegionName} - ${selectedYear}年 月度跨境消費佔比趨勢`;
-        const monthlyData = Array(12).fill(null).map(() => ({ cbAmount: 0, totalAmount: 0 }));
-        data.filter(d => d.year == selectedYear).forEach(d => {
-            if (d.month >= 1 && d.month <= 12) {
-                monthlyData[d.month - 1].cbAmount += d.crossBorderAmountNTD;
-                monthlyData[d.month - 1].totalAmount += d.totalAmountNTD;
-            }
-        });
-        labels = uniqueMonths.map(m => `${selectedYear}/${m.toString().padStart(2,'0')}`);
-        ratioSeries = monthlyData.map(md => (md.totalAmount > 0) ? (md.cbAmount / md.totalAmount) * 100 : 0);
-    } else {
-        chartTitle = `${currentRegionName} - ${selectedYear || '所有年份'}/${selectedMonth || '所有月份'} 跨境消費佔比`;
-         if (selectedRegionCode === "ALL" && selectedYear !== "ALL" && selectedMonth !== "ALL") {
-            chartTitle = `${selectedYear}年${selectedMonth.toString().padStart(2,'0')}月 - 各地區跨境消費佔比`;
-            const regionalData = {};
-            data.forEach(d => {
-                const regionName = uniqueRegionCodeToName[d.regionCode] || d.regionCode;
-                if (!regionalData[regionName]) regionalData[regionName] = { cbAmount: 0, totalAmount: 0 };
-                regionalData[regionName].cbAmount += d.crossBorderAmountNTD;
-                regionalData[regionName].totalAmount += d.totalAmountNTD;
-            });
-            const sortedRegions = Object.entries(regionalData).sort(([,a],[,b]) => ((b.totalAmount > 0 ? (b.cbAmount / b.totalAmount) : 0) - (a.totalAmount > 0 ? (a.cbAmount / a.totalAmount) : 0))).slice(0,15);
-            labels = sortedRegions.map(([name,]) => name);
-            ratioSeries = sortedRegions.map(([,rData]) => (rData.totalAmount > 0) ? (rData.cbAmount / rData.totalAmount) * 100 : 0);
-
-        } else {
-            const totalCb = data.reduce((sum, d) => sum + d.crossBorderAmountNTD, 0);
-            const totalAll = data.reduce((sum, d) => sum + d.totalAmountNTD, 0);
-            labels = [chartTitle.substring(0, chartTitle.lastIndexOf("跨境消費佔比"))]; 
-            ratioSeries = [(totalAll > 0) ? (totalCb / totalAll) * 100 : 0];
-        }
-    }
-
-    if (crossBorderRatioChartInstance) crossBorderRatioChartInstance.destroy();
-    crossBorderRatioChartInstance = new Chart(ctx, {
-        type: labels.length > 1 ? 'line' : 'bar',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: '跨境消費金額佔總金額比例 (%)',
-                data: ratioSeries,
-                borderColor: 'rgb(255, 159, 64)',
-                backgroundColor: 'rgba(255, 159, 64, 0.5)',
-                tension: 0.1,
-                pointRadius: labels.length <= 12 ? 4 : 2,
-            }]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { 
-                title: { display: true, text: chartTitle, font: {size: 14}, color: chartFontColor },
-                legend: { labels: { color: chartFontColor, boxWidth: 12, font: {size:10} } }
-            },
-            scales: { 
-                x: { ticks: { color: chartFontColor, font: {size:10} }, grid: { color: 'rgba(255,255,255,0.1)'} },
-                y: { beginAtZero: true, max: 100, ticks: { callback: value => `${value.toFixed(1)}%`, color: chartFontColor, font: {size:10} }, grid: { color: 'rgba(255,255,255,0.1)'} }
-            }
-        }
-    });
-}
-
-function renderAvgCbSpendingPerCardChart(data, selectedYear, selectedMonth, selectedRegionCode) {
-    const ctx = document.getElementById('avgCbSpendingPerCardChart')?.getContext('2d');
-    if (!ctx) return;
-
-    let labels = [];
-    let avgSpendingSeries = [];
-    let chartTitle = "平均每卡跨境消費金額";
-    const currentRegionName = selectedRegionCode === "ALL" ? "全國" : (uniqueRegionCodeToName[selectedRegionCode] || selectedRegionCode);
-    const chartFontColor = '#fff';
-
-
-    if (selectedYear === "ALL" && selectedMonth === "ALL") {
-        chartTitle = `${currentRegionName} - 年度平均每卡跨境消費趨勢`;
-        const yearlyData = {};
-        data.forEach(d => {
-            if (!yearlyData[d.year]) yearlyData[d.year] = { cbAmount: 0, cardCount: 0 };
-            yearlyData[d.year].cbAmount += d.crossBorderAmountNTD;
-            yearlyData[d.year].cardCount += d.cardCount;
-        });
-        labels = Object.keys(yearlyData).map(y => parseInt(y)).sort((a, b) => a - b);
-        avgSpendingSeries = labels.map(year => {
-            const yearData = yearlyData[year];
-            return (yearData.cardCount > 0) ? (yearData.cbAmount / yearData.cardCount) : 0;
-        });
-    } else if (selectedYear !== "ALL" && selectedMonth === "ALL") {
-        chartTitle = `${currentRegionName} - ${selectedYear}年 月度平均每卡跨境消費趨勢`;
-        const monthlyData = Array(12).fill(null).map(() => ({ cbAmount: 0, cardCount: 0 }));
-        data.filter(d => d.year == selectedYear).forEach(d => {
-            if (d.month >= 1 && d.month <= 12) {
-                monthlyData[d.month - 1].cbAmount += d.crossBorderAmountNTD;
-                monthlyData[d.month - 1].cardCount += d.cardCount;
-            }
-        });
-        labels = uniqueMonths.map(m => `${selectedYear}/${m.toString().padStart(2,'0')}`);
-        avgSpendingSeries = monthlyData.map(md => (md.cardCount > 0) ? (md.cbAmount / md.cardCount) : 0);
-    } else {
-        chartTitle = `${currentRegionName} - ${selectedYear || '所有年份'}/${selectedMonth || '所有月份'} 平均每卡跨境消費`;
-        if (selectedRegionCode === "ALL" && selectedYear !== "ALL" && selectedMonth !== "ALL") {
-            chartTitle = `${selectedYear}年${selectedMonth.toString().padStart(2,'0')}月 - 各地區平均每卡跨境消費`;
-            const regionalData = {};
-            data.forEach(d => {
-                const regionName = uniqueRegionCodeToName[d.regionCode] || d.regionCode;
-                if (!regionalData[regionName]) regionalData[regionName] = { cbAmount: 0, cardCount: 0 };
-                regionalData[regionName].cbAmount += d.crossBorderAmountNTD;
-                regionalData[regionName].cardCount += d.cardCount;
-            });
-            const sortedRegions = Object.entries(regionalData).sort(([,a],[,b]) => ((b.cardCount > 0 ? b.cbAmount/b.cardCount : 0) - (a.cardCount > 0 ? a.cbAmount/a.cardCount : 0))).slice(0,15);
-            labels = sortedRegions.map(([name,]) => name);
-            avgSpendingSeries = sortedRegions.map(([,rData]) => (rData.cardCount > 0) ? (rData.cbAmount / rData.cardCount) : 0);
-        } else {
-            const totalCb = data.reduce((sum, d) => sum + d.crossBorderAmountNTD, 0);
-            const totalCards = data.reduce((sum, d) => sum + d.cardCount, 0);
-            labels = [chartTitle.substring(0, chartTitle.lastIndexOf("平均每卡跨境消費"))];
-            avgSpendingSeries = [(totalCards > 0) ? (totalCb / totalCards) : 0];
-        }
-    }
-
-    if (avgCbSpendingPerCardChartInstance) avgCbSpendingPerCardChartInstance.destroy();
-    avgCbSpendingPerCardChartInstance = new Chart(ctx, {
-        type: labels.length > 1 ? 'line' : 'bar',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: '平均每卡跨境消費金額 (NTD)',
-                data: avgSpendingSeries,
-                borderColor: 'rgb(153, 102, 255)',
-                backgroundColor: 'rgba(153, 102, 255, 0.5)',
-                tension: 0.1,
-                pointRadius: labels.length <= 12 ? 4 : 2,
-            }]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { 
-                title: { display: true, text: chartTitle, font: {size: 14}, color: chartFontColor },
-                legend: { labels: { color: chartFontColor, boxWidth: 12, font: {size:10} } }
-            },
-            scales: { 
-                x: { ticks: { color: chartFontColor, font: {size:10} }, grid: { color: 'rgba(255,255,255,0.1)'} },
-                y: { beginAtZero: true, ticks: { callback: value => value.toLocaleString(undefined, {maximumFractionDigits: 0}), color: chartFontColor, font: {size:10} }, grid: { color: 'rgba(255,255,255,0.1)'} }
-            }
-        }
-    });
-}
-
-// --- 潛力之星分析 (Potential Stars Analysis) ---
-function initializePotentialStars() {
-    const analyzeButton = document.getElementById('analyzePotentialButton');
-    if (analyzeButton) {
-        analyzeButton.addEventListener('click', updatePotentialStarsAnalysis);
-    }
-}
-
-function calculatePotentialDataForAllRegions() {
-    if (allCrossBorderData.length === 0) return [];
-
-    const startYearElement = document.getElementById('startYearPotential');
-    const endYearElement = document.getElementById('endYearPotential');
-
-    if (!startYearElement || !endYearElement || !startYearElement.value || !endYearElement.value) {
-        console.warn("潛力分析年份選擇元素未找到或未選擇年份。");
-        return [];
-    }
-
-    const startYear = parseInt(startYearElement.value, 10);
-    const endYear = parseInt(endYearElement.value, 10);
-
-    if (isNaN(startYear) || isNaN(endYear) || startYear >= endYear) {
-        return [];
-    }
-
-    const potentialData = [];
-    for (const regionCode in uniqueRegionCodeToName) {
-        const regionName = uniqueRegionCodeToName[regionCode];
-
-        const prevPeriodData = allCrossBorderData.filter(d => d.regionCode == regionCode && d.year == startYear);
-        let prevCBAmount = prevPeriodData.reduce((sum, d) => sum + d.crossBorderAmountNTD, 0);
-        let prevCBTransactions = prevPeriodData.reduce((sum, d) => sum + d.crossBorderTransactions, 0);
-        const prevATV = prevCBTransactions > 0 ? (prevCBAmount / prevCBTransactions) : 0;
-
-        const currentPeriodData = allCrossBorderData.filter(d => d.regionCode == regionCode && d.year == endYear);
-        let currentCBAmount = currentPeriodData.reduce((sum, d) => sum + d.crossBorderAmountNTD, 0);
-        let currentCBTransactions = currentPeriodData.reduce((sum, d) => sum + d.crossBorderTransactions, 0);
-        const currentATV = currentCBTransactions > 0 ? (currentCBAmount / currentCBTransactions) : 0;
-
-        const calculateGrowth = (current, previous) => {
-            if (previous > 0) return ((current - previous) / previous) * 100;
-            if (current > 0 && previous === 0) return Infinity;
-            return 0;
-        };
-
-        const amountGrowth = calculateGrowth(currentCBAmount, prevCBAmount);
-        const transactionsGrowth = calculateGrowth(currentCBTransactions, prevCBTransactions);
-        const atvGrowth = calculateGrowth(currentATV, prevATV);
-
-        potentialData.push({
-            regionCode, regionName,
-            amountGrowthRate: isFinite(amountGrowth) ? amountGrowth : (amountGrowth === Infinity ? 99999 : 0),
-            transactionsGrowthRate: isFinite(transactionsGrowth) ? transactionsGrowth : (transactionsGrowth === Infinity ? 99999 : 0),
-            currentATV,
-            atvGrowthRate: isFinite(atvGrowth) ? atvGrowth : (atvGrowth === Infinity ? 99999 : 0),
-        });
-    }
-    return potentialData;
-}
-
-
-function updatePotentialStarsAnalysis() {
-    if (allCrossBorderData.length === 0) return;
-    showLoadingIndicator(true, "更新潛力分析...");
-
-    const potentialData = calculatePotentialDataForAllRegions();
-
-    renderPotentialStarsTable(potentialData);
-
-    const currentUser = auth ? auth.currentUser : null;
-    const restrictedContentWrapper = document.getElementById('restricted-content-wrapper');
-    const restrictedContentOverlay = document.getElementById('restricted-content-overlay');
-    const authFormContainer = document.getElementById('auth-form-container');
-    const verifyEmailPromptContent = document.getElementById('verify-email-prompt-content');
-
-
-    if (currentUser && currentUser.emailVerified) {
-        if(restrictedContentWrapper) restrictedContentWrapper.classList.remove('blurred');
-        if(restrictedContentOverlay) restrictedContentOverlay.style.display = 'none';
-        if (potentialData.length > 0) {
-            renderConsumptionUpgradeChart(potentialData);
-            renderPotentialFocusRegions(potentialData);
-        } else {
-            clearRestrictedContentOnAuthChange();
-        }
-    } else {
-        if(restrictedContentWrapper) restrictedContentWrapper.classList.add('blurred');
-        if(restrictedContentOverlay) restrictedContentOverlay.style.display = 'flex';
-        if (currentUser && !currentUser.emailVerified) {
-            if(authFormContainer) authFormContainer.style.display = 'none';
-            if(verifyEmailPromptContent) verifyEmailPromptContent.style.display = 'block';
-        } else {
-            if(authFormContainer) authFormContainer.style.display = 'block';
-            if(verifyEmailPromptContent) verifyEmailPromptContent.style.display = 'none';
-        }
-        clearRestrictedContentOnAuthChange();
-    }
-    showLoadingIndicator(false);
-}
-
-function renderPotentialStarsTable(data) {
-    const tableBody = document.getElementById('potentialStarsTableBody');
-    if (!tableBody) return;
-    tableBody.innerHTML = '';
-    const sortedData = [...data].sort((a, b) => {
-        if (b.amountGrowthRate === 99999 && a.amountGrowthRate !== 99999) return 1;
-        if (a.amountGrowthRate === 99999 && b.amountGrowthRate !== 99999) return -1;
-        if (b.amountGrowthRate === 99999 && a.amountGrowthRate === 99999) {
-             if (b.atvGrowthRate === 99999 && a.atvGrowthRate !== 99999) return 1;
-             if (a.atvGrowthRate === 99999 && b.atvGrowthRate !== 99999) return -1;
-             return b.atvGrowthRate - a.atvGrowthRate;
-        }
-        return b.amountGrowthRate - a.amountGrowthRate;
-    });
-
-    if (sortedData.length === 0 && document.getElementById('startYearPotential').value && document.getElementById('endYearPotential').value && parseInt(document.getElementById('startYearPotential').value) < parseInt(document.getElementById('endYearPotential').value)) {
-        tableBody.innerHTML = '<tr><td colspan="5" class="text-center">此年份區間無數據可供分析。</td></tr>';
-    } else if (sortedData.length === 0) {
-         tableBody.innerHTML = '<tr><td colspan="5" class="text-center">請點擊「開始分析」按鈕或選擇有效年份。</td></tr>';
-    } else {
-        const formatPercent = (val) => val === 99999 ? "∞" : `${val.toFixed(1)}%`;
-        sortedData.forEach(region => {
-            tableBody.insertAdjacentHTML('beforeend', `<tr><td>${region.regionName}</td><td>${formatPercent(region.amountGrowthRate)}</td><td>${formatPercent(region.transactionsGrowthRate)}</td><td>${region.currentATV.toLocaleString(undefined, {maximumFractionDigits:0})}</td><td>${formatPercent(region.atvGrowthRate)}</td></tr>`);
-        });
-    }
-}
-
-function renderConsumptionUpgradeChart(data) {
-    const ctx = document.getElementById('consumptionUpgradeChart')?.getContext('2d');
-    if (!ctx) return;
-
-    if (data.length === 0) {
-        if (consumptionUpgradeChartInstance) {
-            consumptionUpgradeChartInstance.destroy();
-            consumptionUpgradeChartInstance = null;
-        }
-        return;
-    }
-
-    const chartDataPoints = data.map(d => {
-        const capGrowth = (val) => val === 99999 ? 250 : Math.min(250, Math.max(-100, val));
-        return {
-            x: capGrowth(d.transactionsGrowthRate),
-            y: capGrowth(d.amountGrowthRate),
-            r: Math.max(5, Math.min(20, (d.atvGrowthRate === 99999 ? 100 : d.atvGrowthRate) / 10 + 8)),
-            label: d.regionName,
-            atvGrowth: d.atvGrowthRate,
-            currentATV: d.currentATV,
-            originalX: d.transactionsGrowthRate,
-            originalY: d.amountGrowthRate
-        };
-    });
-
-    if (consumptionUpgradeChartInstance) consumptionUpgradeChartInstance.destroy();
-    consumptionUpgradeChartInstance = new Chart(ctx, {
-        type: 'bubble',
-        data: {
-            datasets: [{
-                label: '各地區消費潛力 (氣泡大小代表ATV增長率)',
-                data: chartDataPoints,
-                backgroundColor: 'rgba(75, 192, 192, 0.7)',
-                borderColor: 'rgb(75, 192, 192)',
-            }]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: {
-                title: { display: true, text: '消費升級象限圖', font: { size: 14 }, color: '#fff' },
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const item = context.raw;
-                            const formatOriginal = (val) => val === 99999 ? "∞" : val.toFixed(1);
-                            return `${item.label}: 金額增長 ${formatOriginal(item.originalY)}%, 筆數增長 ${formatOriginal(item.originalX)}%, ATV增長 ${formatOriginal(item.atvGrowth)}% (現期ATV: ${item.currentATV.toLocaleString(undefined, {maximumFractionDigits:0})})`;
-                        }
-                    }
-                }
-            },
-            scales: {
-                x: {
-                    title: { display: true, text: '筆數增長率 (%)', color: '#fff', font: {size: 10} },
-                    ticks: { color: '#fff', font: {size: 10}, callback: value => (value === 250 ) ? '≥250%' : (value === -100 ? '≤-100%' : value + '%') },
-                    grid: { color: 'rgba(255,255,255,0.1)'}
-                },
-                y: {
-                    title: { display: true, text: '金額增長率 (%)', color: '#fff', font: {size: 10} },
-                    ticks: { color: '#fff', font: {size: 10}, callback: value => (value === 250) ? '≥250%' : (value === -100 ? '≤-100%' : value + '%') },
-                    grid: { color: 'rgba(255,255,255,0.1)'}
-                }
-            }
-        }
-    });
-}
-
-function renderPotentialFocusRegions(data) {
-    const focusContainer = document.getElementById('potentialFocus');
-    if (!focusContainer) return;
-    focusContainer.innerHTML = '';
-
-    if (data.length === 0) {
-        focusContainer.innerHTML = '<p class="text-center text-light small mt-3">無數據可供分析焦點地區。</p>';
-        return;
-    }
-
-    const sortedForFocus = data
-        .filter(d => d.amountGrowthRate > 10 && d.atvGrowthRate > 5 && d.amountGrowthRate !== 99999 && d.atvGrowthRate !== 99999)
-        .sort((a, b) => (b.amountGrowthRate + b.atvGrowthRate) - (a.amountGrowthRate + a.atvGrowthRate))
-        .slice(0, 3);
-
-    if (sortedForFocus.length === 0) {
-        focusContainer.innerHTML = '<p class="text-center text-light small mt-3">目前無符合「金額增長>10% 且 ATV增長>5%」焦點條件的地區。</p>';
-        return;
-    }
-    sortedForFocus.forEach(region => {
-        focusContainer.insertAdjacentHTML('beforeend', `
-            <div class="col-md-12 col-lg-4 mb-3" data-aos="fade-up">
-                <div class="icon-box p-3 text-center">
-                     <i class="bi bi-award-fill" style="font-size: 1.8rem; color: #ffab00;"></i>
-                    <h5 class="mt-2 text-light" style="font-size: 1rem;">${region.regionName}</h5>
-                    <p class="small mb-1 text-light" style="font-size: 0.8rem;">金額增長: <span class="fw-bold">${region.amountGrowthRate.toFixed(1)}%</span></p>
-                    <p class="small mb-0 text-light" style="font-size: 0.8rem;">ATV增長: <span class="fw-bold">${region.atvGrowthRate.toFixed(1)}%</span></p>
-                </div>
-            </div>`);
-    });
-}
-
-
-
+// All subsequent chart-rendering and data-calculation functions remain exactly the same as the previous version.
+// They are called by the new `refreshAllDataDrivenContent` function.
+function updateDashboardOverview(){if(allCrossBorderData.length===0)return;showLoadingIndicator(true,"更新總覽數據...");const selectedYear=document.getElementById('yearFilterOverview').value;const selectedMonth=document.getElementById('monthFilterOverview').value;const selectedRegionCode=document.getElementById('regionFilterOverview').value;let filteredData=allCrossBorderData;if(selectedYear!=="ALL")filteredData=filteredData.filter(d=>d.year==selectedYear);if(selectedMonth!=="ALL")filteredData=filteredData.filter(d=>d.month==selectedMonth);if(selectedRegionCode!=="ALL")filteredData=filteredData.filter(d=>d.regionCode==selectedRegionCode);renderKeyMetricsForOverview(filteredData);renderTrendsChartForOverview(filteredData,selectedYear,selectedMonth,selectedRegionCode);if(selectedRegionCode==="ALL"){renderRegionRankingForOverview(filteredData);}else{const tableBody=document.getElementById('regionRankingTableBody');if(tableBody)tableBody.innerHTML=`<tr><td colspan="3" class="text-center">已選擇地區：${uniqueRegionCodeToName[selectedRegionCode]||selectedRegionCode}</td></tr>`;}
+showLoadingIndicator(false);}
+function renderKeyMetricsForOverview(data){let totalCBAmount=0;let totalCBTransactions=0;data.forEach(d=>{totalCBAmount+=d.crossBorderAmountNTD;totalCBTransactions+=d.crossBorderTransactions;});const averageCBTransactionValue=totalCBTransactions>0?(totalCBAmount/totalCBTransactions):0;const container=document.getElementById('keyMetricsCards');if(!container)return;container.innerHTML=`
+<div class="col-sm-6 col-lg-12 mb-3"><div class="stats-item"><h4>跨境總消費金額</h4><p>${totalCBAmount.toLocaleString()}<small>NTD</small></p></div></div>
+<div class="col-sm-6 col-lg-12 mb-3"><div class="stats-item"><h4>跨境總交易筆數</h4><p>${totalCBTransactions.toLocaleString()}</p></div></div>
+<div class="col-sm-6 col-lg-12 mb-3"><div class="stats-item"><h4>平均跨境交易金額 (ATV)</h4><p>${averageCBTransactionValue.toLocaleString(undefined,{maximumFractionDigits:0})}<small>NTD</small></p></div></div>`;}
+function renderTrendsChartForOverview(data,selectedYear,selectedMonth,selectedRegionCode){const ctx=document.getElementById('trendsChart')?.getContext('2d');if(!ctx)return;let labels=[];let cbAmountSeries=[];let cbTransactionsSeries=[];let chartTitle="跨境消費趨勢";const currentRegionName=selectedRegionCode==="ALL"?"全國":(uniqueRegionCodeToName[selectedRegionCode]||selectedRegionCode);const chartFontColor='#fff';if(selectedYear==="ALL"&&selectedMonth==="ALL"){chartTitle=`${currentRegionName} - 年度跨境趨勢`;const yearlyData={};data.forEach(d=>{if(!yearlyData[d.year])yearlyData[d.year]={amount:0,transactions:0};yearlyData[d.year].amount+=d.crossBorderAmountNTD;yearlyData[d.year].transactions+=d.crossBorderTransactions;});labels=Object.keys(yearlyData).map(y=>parseInt(y)).sort((a,b)=>a-b);cbAmountSeries=labels.map(year=>yearlyData[year]?.amount||0);cbTransactionsSeries=labels.map(year=>yearlyData[year]?.transactions||0);}else if(selectedYear!=="ALL"&&selectedMonth==="ALL"){chartTitle=`${currentRegionName} - ${selectedYear}年 月度跨境趨勢`;const monthlyData=Array(12).fill(null).map(()=>({amount:0,transactions:0}));data.filter(d=>d.year==selectedYear).forEach(d=>{if(d.month>=1&&d.month<=12){monthlyData[d.month-1].amount+=d.crossBorderAmountNTD;monthlyData[d.month-1].transactions+=d.crossBorderTransactions;}});labels=uniqueMonths.map(m=>`${selectedYear}/${m.toString().padStart(2,'0')}`);cbAmountSeries=monthlyData.map(monthData=>monthData.amount);cbTransactionsSeries=monthlyData.map(monthData=>monthData.transactions);}else if(selectedYear!=="ALL"&&selectedMonth!=="ALL"){if(selectedRegionCode==="ALL"){chartTitle=`${selectedYear}年${selectedMonth.toString().padStart(2,'0')}月 - 各地區跨境消費金額`;const regionalDataForPeriod={};data.forEach(d=>{const regionName=uniqueRegionCodeToName[d.regionCode]||d.regionCode;if(!regionalDataForPeriod[regionName])regionalDataForPeriod[regionName]={amount:0,transactions:0};regionalDataForPeriod[regionName].amount+=d.crossBorderAmountNTD;regionalDataForPeriod[regionName].transactions+=d.crossBorderTransactions;});const sortedRegions=Object.entries(regionalDataForPeriod).sort(([,a],[,b])=>b.amount-a.amount).slice(0,15);labels=sortedRegions.map(([name,])=>name);cbAmountSeries=sortedRegions.map(([,rData])=>rData.amount);cbTransactionsSeries=sortedRegions.map(([,rData])=>rData.transactions);}else{chartTitle=`${currentRegionName} - ${selectedYear}年${selectedMonth.toString().padStart(2,'0')}月 跨境消費`;labels=[`${selectedYear}/${selectedMonth.toString().padStart(2,'0')}`];cbAmountSeries=[data.reduce((sum,d)=>sum+d.crossBorderAmountNTD,0)];cbTransactionsSeries=[data.reduce((sum,d)=>sum+d.crossBorderTransactions,0)];}}else{labels=["請選擇更明確的篩選條件"];cbAmountSeries=[];cbTransactionsSeries=[];}
+if(overviewTrendsChartInstance)overviewTrendsChartInstance.destroy();overviewTrendsChartInstance=new Chart(ctx,{type:labels.length>1?'line':'bar',data:{labels:labels,datasets:[{label:'跨境消費金額 (NTD)',data:cbAmountSeries,borderColor:'rgb(54, 162, 235)',backgroundColor:'rgba(54, 162, 235, 0.5)',tension:0.1,yAxisID:'yAmount',pointRadius:labels.length<=12?4:2,pointHoverRadius:labels.length<=12?6:4,},{label:'跨境交易筆數',data:cbTransactionsSeries,borderColor:'rgb(255, 99, 132)',backgroundColor:'rgba(255, 99, 132, 0.5)',tension:0.1,yAxisID:'yTransactions',pointRadius:labels.length<=12?4:2,pointHoverRadius:labels.length<=12?6:4,hidden:labels.length>15}]},options:{responsive:true,maintainAspectRatio:false,plugins:{title:{display:true,text:chartTitle,font:{size:14},color:chartFontColor},legend:{labels:{color:chartFontColor,boxWidth:12,font:{size:10}}}},scales:{x:{ticks:{color:chartFontColor,font:{size:10}},grid:{color:'rgba(255,255,255,0.1)'}},yAmount:{type:'linear',display:true,position:'left',title:{display:true,text:'金額 (NTD)',color:chartFontColor,font:{size:10}},ticks:{color:chartFontColor,font:{size:10},callback:v=>v.toLocaleString()},grid:{color:'rgba(255,255,255,0.1)'}},yTransactions:{type:'linear',display:true,position:'right',title:{display:true,text:'筆數',color:chartFontColor,font:{size:10}},ticks:{color:chartFontColor,font:{size:10},callback:v=>v.toLocaleString()},grid:{drawOnChartArea:false},}}}});}
+function renderRegionRankingForOverview(data){const tableBody=document.getElementById('regionRankingTableBody');if(!tableBody)return;tableBody.innerHTML='';const aggregatedByRegion={};data.forEach(d=>{if(!uniqueRegionCodeToName[d.regionCode])return;const regionName=uniqueRegionCodeToName[d.regionCode];if(!aggregatedByRegion[d.regionCode]){aggregatedByRegion[d.regionCode]={name:regionName,cbAmount:0};}
+aggregatedByRegion[d.regionCode].cbAmount+=d.crossBorderAmountNTD;});const rankedRegions=Object.values(aggregatedByRegion).sort((a,b)=>b.cbAmount-a.cbAmount).slice(0,10);if(rankedRegions.length===0){tableBody.innerHTML='<tr><td colspan="3" class="text-center">此篩選條件下無地區數據可供排行。</td></tr>';return;}
+rankedRegions.forEach((region,index)=>{tableBody.insertAdjacentHTML('beforeend',`<tr><td>${index+1}</td><td>${region.name}</td><td>${region.cbAmount.toLocaleString()}</td></tr>`);});}
+function renderDetailedDataTable(regionCode){const tableHeadersContainer=document.getElementById('detailedDataHeaders');const tableBodyContainer=document.getElementById('detailedDataTableBody');if(!tableHeadersContainer||!tableBodyContainer)return;tableHeadersContainer.innerHTML='';tableBodyContainer.innerHTML='';const selectedYear=document.getElementById('yearFilterOverview').value;const selectedMonth=document.getElementById('monthFilterOverview').value;let dataForTable=allCrossBorderData.filter(d=>d.regionCode===regionCode);if(selectedYear!=="ALL")dataForTable=dataForTable.filter(d=>d.year==selectedYear);if(selectedMonth!=="ALL")dataForTable=dataForTable.filter(d=>d.month==selectedMonth);if(dataForTable.length===0){tableBodyContainer.innerHTML='<tr><td colspan="7" class="text-center">此篩選條件下無詳細數據。</td></tr>';tableHeadersContainer.innerHTML='<th>年月</th><th>卡數</th><th>總筆數</th><th>總金額(NTD)</th><th>跨境筆數</th><th>跨境金額(NTD)</th><th>跨境ATV(NTD)</th>';return;}
+tableHeadersContainer.innerHTML='<th>年月</th><th>卡數</th><th>總筆數</th><th>總金額(NTD)</th><th>跨境筆數</th><th>跨境金額(NTD)</th><th>跨境ATV(NTD)</th>';dataForTable.sort((a,b)=>(a.year===b.year)?a.month-b.month:a.year-b.year).forEach(row=>{const atv=row.crossBorderTransactions>0?(row.crossBorderAmountNTD/row.crossBorderTransactions):0;const tr=`<tr>
+<td>${row.year}/${row.month.toString().padStart(2,'0')}</td>
+<td>${row.cardCount.toLocaleString()}</td>
+<td>${row.totalTransactions.toLocaleString()}</td>
+<td>${row.totalAmountNTD.toLocaleString()}</td>
+<td>${row.crossBorderTransactions.toLocaleString()}</td>
+<td>${row.crossBorderAmountNTD.toLocaleString()}</td>
+<td>${atv.toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+</tr>`;tableBodyContainer.insertAdjacentHTML('beforeend',tr);});}
+function updateAdvancedAnalysisCharts(){if(allCrossBorderData.length===0)return;showLoadingIndicator(true,"更新進階分析圖表...");const selectedYear=document.getElementById('yearFilterOverview').value;const selectedMonth=document.getElementById('monthFilterOverview').value;const selectedRegionCode=document.getElementById('regionFilterOverview').value;let filteredData=allCrossBorderData;if(selectedYear!=="ALL")filteredData=filteredData.filter(d=>d.year==selectedYear);if(selectedMonth!=="ALL")filteredData=filteredData.filter(d=>d.month==selectedMonth);if(selectedRegionCode!=="ALL")filteredData=filteredData.filter(d=>d.regionCode==selectedRegionCode);renderCrossBorderRatioChart(filteredData,selectedYear,selectedMonth,selectedRegionCode);renderAvgCbSpendingPerCardChart(filteredData,selectedYear,selectedMonth,selectedRegionCode);showLoadingIndicator(false);}
+function renderCrossBorderRatioChart(data,selectedYear,selectedMonth,selectedRegionCode){const ctx=document.getElementById('crossBorderRatioChart')?.getContext('2d');if(!ctx)return;let labels=[];let ratioSeries=[];let chartTitle="跨境消費金額佔總消費金額比例";const currentRegionName=selectedRegionCode==="ALL"?"全國":(uniqueRegionCodeToName[selectedRegionCode]||selectedRegionCode);const chartFontColor='#fff';if(selectedYear==="ALL"&&selectedMonth==="ALL"){chartTitle=`${currentRegionName} - 年度跨境消費佔比趨勢`;const yearlyData={};data.forEach(d=>{if(!yearlyData[d.year])yearlyData[d.year]={cbAmount:0,totalAmount:0};yearlyData[d.year].cbAmount+=d.crossBorderAmountNTD;yearlyData[d.year].totalAmount+=d.totalAmountNTD;});labels=Object.keys(yearlyData).map(y=>parseInt(y)).sort((a,b)=>a-b);ratioSeries=labels.map(year=>{const yearData=yearlyData[year];return(yearData.totalAmount>0)?(yearData.cbAmount/yearData.totalAmount)*100:0;});}else if(selectedYear!=="ALL"&&selectedMonth==="ALL"){chartTitle=`${currentRegionName} - ${selectedYear}年 月度跨境消費佔比趨勢`;const monthlyData=Array(12).fill(null).map(()=>({cbAmount:0,totalAmount:0}));data.filter(d=>d.year==selectedYear).forEach(d=>{if(d.month>=1&&d.month<=12){monthlyData[d.month-1].cbAmount+=d.crossBorderAmountNTD;monthlyData[d.month-1].totalAmount+=d.totalAmountNTD;}});labels=uniqueMonths.map(m=>`${selectedYear}/${m.toString().padStart(2,'0')}`);ratioSeries=monthlyData.map(md=>(md.totalAmount>0)?(md.cbAmount/md.totalAmount)*100:0);}else{chartTitle=`${currentRegionName} - ${selectedYear||'所有年份'}/${selectedMonth||'所有月份'} 跨境消費佔比`;if(selectedRegionCode==="ALL"&&selectedYear!=="ALL"&&selectedMonth!=="ALL"){chartTitle=`${selectedYear}年${selectedMonth.toString().padStart(2,'0')}月 - 各地區跨境消費佔比`;const regionalData={};data.forEach(d=>{const regionName=uniqueRegionCodeToName[d.regionCode]||d.regionCode;if(!regionalData[regionName])regionalData[regionName]={cbAmount:0,totalAmount:0};regionalData[regionName].cbAmount+=d.crossBorderAmountNTD;regionalData[regionName].totalAmount+=d.totalAmountNTD;});const sortedRegions=Object.entries(regionalData).sort(([,a],[,b])=>((b.totalAmount>0?(b.cbAmount/b.totalAmount):0)-(a.totalAmount>0?(a.cbAmount/a.totalAmount):0))).slice(0,15);labels=sortedRegions.map(([name,])=>name);ratioSeries=sortedRegions.map(([,rData])=>(rData.totalAmount>0)?(rData.cbAmount/rData.totalAmount)*100:0);}else{const totalCb=data.reduce((sum,d)=>sum+d.crossBorderAmountNTD,0);const totalAll=data.reduce((sum,d)=>sum+d.totalAmountNTD,0);labels=[chartTitle.substring(0,chartTitle.lastIndexOf("跨境消費佔比"))];ratioSeries=[(totalAll>0)?(totalCb/totalAll)*100:0];}}
+if(crossBorderRatioChartInstance)crossBorderRatioChartInstance.destroy();crossBorderRatioChartInstance=new Chart(ctx,{type:labels.length>1?'line':'bar',data:{labels:labels,datasets:[{label:'跨境消費金額佔總金額比例 (%)',data:ratioSeries,borderColor:'rgb(255, 159, 64)',backgroundColor:'rgba(255, 159, 64, 0.5)',tension:0.1,pointRadius:labels.length<=12?4:2,}]},options:{responsive:true,maintainAspectRatio:false,plugins:{title:{display:true,text:chartTitle,font:{size:14},color:chartFontColor},legend:{labels:{color:chartFontColor,boxWidth:12,font:{size:10}}}},scales:{x:{ticks:{color:chartFontColor,font:{size:10}},grid:{color:'rgba(255,255,255,0.1)'}},y:{beginAtZero:true,max:100,ticks:{callback:value=>`${value.toFixed(1)}%`,color:chartFontColor,font:{size:10}},grid:{color:'rgba(255,255,255,0.1)'}}}}});}
+function renderAvgCbSpendingPerCardChart(data,selectedYear,selectedMonth,selectedRegionCode){const ctx=document.getElementById('avgCbSpendingPerCardChart')?.getContext('2d');if(!ctx)return;let labels=[];let avgSpendingSeries=[];let chartTitle="平均每卡跨境消費金額";const currentRegionName=selectedRegionCode==="ALL"?"全國":(uniqueRegionCodeToName[selectedRegionCode]||selectedRegionCode);const chartFontColor='#fff';if(selectedYear==="ALL"&&selectedMonth==="ALL"){chartTitle=`${currentRegionName} - 年度平均每卡跨境消費趨勢`;const yearlyData={};data.forEach(d=>{if(!yearlyData[d.year])yearlyData[d.year]={cbAmount:0,cardCount:0};yearlyData[d.year].cbAmount+=d.crossBorderAmountNTD;yearlyData[d.year].cardCount+=d.cardCount;});labels=Object.keys(yearlyData).map(y=>parseInt(y)).sort((a,b)=>a-b);avgSpendingSeries=labels.map(year=>{const yearData=yearlyData[year];return(yearData.cardCount>0)?(yearData.cbAmount/yearData.cardCount):0;});}else if(selectedYear!=="ALL"&&selectedMonth==="ALL"){chartTitle=`${currentRegionName} - ${selectedYear}年 月度平均每卡跨境消費趨勢`;const monthlyData=Array(12).fill(null).map(()=>({cbAmount:0,cardCount:0}));data.filter(d=>d.year==selectedYear).forEach(d=>{if(d.month>=1&&d.month<=12){monthlyData[d.month-1].cbAmount+=d.crossBorderAmountNTD;monthlyData[d.month-1].cardCount+=d.cardCount;}});labels=uniqueMonths.map(m=>`${selectedYear}/${m.toString().padStart(2,'0')}`);avgSpendingSeries=monthlyData.map(md=>(md.cardCount>0)?(md.cbAmount/md.cardCount):0);}else{chartTitle=`${currentRegionName} - ${selectedYear||'所有年份'}/${selectedMonth||'所有月份'} 平均每卡跨境消費`;if(selectedRegionCode==="ALL"&&selectedYear!=="ALL"&&selectedMonth!=="ALL"){chartTitle=`${selectedYear}年${selectedMonth.toString().padStart(2,'0')}月 - 各地區平均每卡跨境消費`;const regionalData={};data.forEach(d=>{const regionName=uniqueRegionCodeToName[d.regionCode]||d.regionCode;if(!regionalData[regionName])regionalData[regionName]={cbAmount:0,cardCount:0};regionalData[regionName].cbAmount+=d.crossBorderAmountNTD;regionalData[regionName].cardCount+=d.cardCount;});const sortedRegions=Object.entries(regionalData).sort(([,a],[,b])=>((b.cardCount>0?b.cbAmount/b.cardCount:0)-(a.cardCount>0?a.cbAmount/a.cardCount:0))).slice(0,15);labels=sortedRegions.map(([name,])=>name);avgSpendingSeries=sortedRegions.map(([,rData])=>(rData.cardCount>0)?(rData.cbAmount/rData.cardCount):0);}else{const totalCb=data.reduce((sum,d)=>sum+d.crossBorderAmountNTD,0);const totalCards=data.reduce((sum,d)=>sum+d.cardCount,0);labels=[chartTitle.substring(0,chartTitle.lastIndexOf("平均每卡跨境消費"))];avgSpendingSeries=[(totalCards>0)?(totalCb/totalCards):0];}}
+if(avgCbSpendingPerCardChartInstance)avgCbSpendingPerCardChartInstance.destroy();avgCbSpendingPerCardChartInstance=new Chart(ctx,{type:labels.length>1?'line':'bar',data:{labels:labels,datasets:[{label:'平均每卡跨境消費金額 (NTD)',data:avgSpendingSeries,borderColor:'rgb(153, 102, 255)',backgroundColor:'rgba(153, 102, 255, 0.5)',tension:0.1,pointRadius:labels.length<=12?4:2,}]},options:{responsive:true,maintainAspectRatio:false,plugins:{title:{display:true,text:chartTitle,font:{size:14},color:chartFontColor},legend:{labels:{color:chartFontColor,boxWidth:12,font:{size:10}}}},scales:{x:{ticks:{color:chartFontColor,font:{size:10}},grid:{color:'rgba(255,255,255,0.1)'}},y:{beginAtZero:true,ticks:{callback:value=>value.toLocaleString(undefined,{maximumFractionDigits:0}),color:chartFontColor,font:{size:10}},grid:{color:'rgba(255,255,255,0.1)'}}}}});}
+function calculatePotentialDataForAllRegions(){if(allCrossBorderData.length===0)return[];const startYearElement=document.getElementById('startYearPotential');const endYearElement=document.getElementById('endYearPotential');if(!startYearElement||!endYearElement||!startYearElement.value||!endYearElement.value){console.warn("潛力分析年份選擇元素未找到或未選擇年份。");return[];}
+const startYear=parseInt(startYearElement.value,10);const endYear=parseInt(endYearElement.value,10);if(isNaN(startYear)||isNaN(endYear)||startYear>=endYear){return[];}
+const potentialData=[];for(const regionCode in uniqueRegionCodeToName){const regionName=uniqueRegionCodeToName[regionCode];const prevPeriodData=allCrossBorderData.filter(d=>d.regionCode==regionCode&&d.year==startYear);let prevCBAmount=prevPeriodData.reduce((sum,d)=>sum+d.crossBorderAmountNTD,0);let prevCBTransactions=prevPeriodData.reduce((sum,d)=>sum+d.crossBorderTransactions,0);const prevATV=prevCBTransactions>0?(prevCBAmount/prevCBTransactions):0;const currentPeriodData=allCrossBorderData.filter(d=>d.regionCode==regionCode&&d.year==endYear);let currentCBAmount=currentPeriodData.reduce((sum,d)=>sum+d.crossBorderAmountNTD,0);let currentCBTransactions=currentPeriodData.reduce((sum,d)=>sum+d.crossBorderTransactions,0);const currentATV=currentCBTransactions>0?(currentCBAmount/currentCBTransactions):0;const calculateGrowth=(current,previous)=>{if(previous>0)return((current-previous)/previous)*100;if(current>0&&previous===0)return Infinity;return 0;};const amountGrowth=calculateGrowth(currentCBAmount,prevCBAmount);const transactionsGrowth=calculateGrowth(currentCBTransactions,prevCBTransactions);const atvGrowth=calculateGrowth(currentATV,prevATV);potentialData.push({regionCode,regionName,amountGrowthRate:isFinite(amountGrowth)?amountGrowth:(amountGrowth===Infinity?99999:0),transactionsGrowthRate:isFinite(transactionsGrowth)?transactionsGrowth:(transactionsGrowth===Infinity?99999:0),currentATV,atvGrowthRate:isFinite(atvGrowth)?atvGrowth:(atvGrowth===Infinity?99999:0),});}
+return potentialData;}
+function updatePotentialStarsAnalysis(){if(allCrossBorderData.length===0)return;showLoadingIndicator(true,"更新潛力分析...");const potentialData=calculatePotentialDataForAllRegions();renderPotentialStarsTable(potentialData);const currentUser=auth?auth.currentUser:null;const restrictedContentWrapper=document.getElementById('restricted-content-wrapper');const restrictedContentOverlay=document.getElementById('restricted-content-overlay');const authFormContainer=document.getElementById('auth-form-container');const verifyEmailPromptContent=document.getElementById('verify-email-prompt-content');if(currentUser&&currentUser.emailVerified){if(restrictedContentWrapper)restrictedContentWrapper.classList.remove('blurred');if(restrictedContentOverlay)restrictedContentOverlay.style.display='none';if(potentialData.length>0){renderConsumptionUpgradeChart(potentialData);renderPotentialFocusRegions(potentialData);}else{clearRestrictedContentOnAuthChange();}}else{if(restrictedContentWrapper)restrictedContentWrapper.classList.add('blurred');if(restrictedContentOverlay)restrictedContentOverlay.style.display='flex';if(currentUser&&!currentUser.emailVerified){if(authFormContainer)authFormContainer.style.display='none';if(verifyEmailPromptContent)verifyEmailPromptContent.style.display='block';}else{if(authFormContainer)authFormContainer.style.display='block';if(verifyEmailPromptContent)verifyEmailPromptContent.style.display='none';}
+clearRestrictedContentOnAuthChange();}
+showLoadingIndicator(false);}
+function renderPotentialStarsTable(data){const tableBody=document.getElementById('potentialStarsTableBody');if(!tableBody)return;tableBody.innerHTML='';const sortedData=[...data].sort((a,b)=>{if(b.amountGrowthRate===99999&&a.amountGrowthRate!==99999)return 1;if(a.amountGrowthRate===99999&&b.amountGrowthRate!==99999)return-1;if(b.amountGrowthRate===99999&&a.amountGrowthRate===99999){if(b.atvGrowthRate===99999&&a.atvGrowthRate!==99999)return 1;if(a.atvGrowthRate===99999&&b.atvGrowthRate!==99999)return-1;return b.atvGrowthRate-a.atvGrowthRate;}
+return b.amountGrowthRate-a.amountGrowthRate;});if(sortedData.length===0&&document.getElementById('startYearPotential').value&&document.getElementById('endYearPotential').value&&parseInt(document.getElementById('startYearPotential').value)<parseInt(document.getElementById('endYearPotential').value)){tableBody.innerHTML='<tr><td colspan="5" class="text-center">此年份區間無數據可供分析。</td></tr>';}else if(sortedData.length===0){tableBody.innerHTML='<tr><td colspan="5" class="text-center">請點擊「開始分析」按鈕或選擇有效年份。</td></tr>';}else{const formatPercent=val=>val===99999?"∞":`${val.toFixed(1)}%`;sortedData.forEach(region=>{tableBody.insertAdjacentHTML('beforeend',`<tr><td>${region.regionName}</td><td>${formatPercent(region.amountGrowthRate)}</td><td>${formatPercent(region.transactionsGrowthRate)}</td><td>${region.currentATV.toLocaleString(undefined,{maximumFractionDigits:0})}</td><td>${formatPercent(region.atvGrowthRate)}</td></tr>`);});}}
+function renderConsumptionUpgradeChart(data){const ctx=document.getElementById('consumptionUpgradeChart')?.getContext('2d');if(!ctx)return;if(data.length===0){if(consumptionUpgradeChartInstance){consumptionUpgradeChartInstance.destroy();consumptionUpgradeChartInstance=null;}
+return;}
+const chartDataPoints=data.map(d=>{const capGrowth=val=>val===99999?250:Math.min(250,Math.max(-100,val));return{x:capGrowth(d.transactionsGrowthRate),y:capGrowth(d.amountGrowthRate),r:Math.max(5,Math.min(20,(d.atvGrowthRate===99999?100:d.atvGrowthRate)/10+8)),label:d.regionName,atvGrowth:d.atvGrowthRate,currentATV:d.currentATV,originalX:d.transactionsGrowthRate,originalY:d.amountGrowthRate};});if(consumptionUpgradeChartInstance)consumptionUpgradeChartInstance.destroy();consumptionUpgradeChartInstance=new Chart(ctx,{type:'bubble',data:{datasets:[{label:'各地區消費潛力 (氣泡大小代表ATV增長率)',data:chartDataPoints,backgroundColor:'rgba(75, 192, 192, 0.7)',borderColor:'rgb(75, 192, 192)',}]},options:{responsive:true,maintainAspectRatio:false,plugins:{title:{display:true,text:'消費升級象限圖',font:{size:14},color:'#fff'},legend:{display:false},tooltip:{callbacks:{label:function(context){const item=context.raw;const formatOriginal=val=>val===99999?"∞":val.toFixed(1);return`${item.label}: 金額增長 ${formatOriginal(item.originalY)}%, 筆數增長 ${formatOriginal(item.originalX)}%, ATV增長 ${formatOriginal(item.atvGrowth)}% (現期ATV: ${item.currentATV.toLocaleString(undefined,{maximumFractionDigits:0})})`}}}},scales:{x:{title:{display:true,text:'筆數增長率 (%)',color:'#fff',font:{size:10}},ticks:{color:'#fff',font:{size:10},callback:value=>(value===250)?'≥250%':(value===-100?'≤-100%':value+'%')},grid:{color:'rgba(255,255,255,0.1)'}},y:{title:{display:true,text:'金額增長率 (%)',color:'#fff',font:{size:10}},ticks:{color:'#fff',font:{size:10},callback:value=>(value===250)?'≥250%':(value===-100?'≤-100%':value+'%')},grid:{color:'rgba(255,255,255,0.1)'}}}}});}
+function renderPotentialFocusRegions(data){const focusContainer=document.getElementById('potentialFocus');if(!focusContainer)return;focusContainer.innerHTML='';if(data.length===0){focusContainer.innerHTML='<p class="text-center text-light small mt-3">無數據可供分析焦點地區。</p>';return;}
+const sortedForFocus=data.filter(d=>d.amountGrowthRate>10&&d.atvGrowthRate>5&&d.amountGrowthRate!==99999&&d.atvGrowthRate!==99999).sort((a,b)=>(b.amountGrowthRate+b.atvGrowthRate)-(a.amountGrowthRate+a.atvGrowthRate)).slice(0,3);if(sortedForFocus.length===0){focusContainer.innerHTML='<p class="text-center text-light small mt-3">目前無符合「金額增長>10% 且 ATV增長>5%」焦點條件的地區。</p>';return;}
+sortedForFocus.forEach(region=>{focusContainer.insertAdjacentHTML('beforeend',`
+<div class="col-md-12 col-lg-4 mb-3" data-aos="fade-up"><div class="icon-box p-3 text-center"><i class="bi bi-award-fill" style="font-size: 1.8rem; color: #ffab00;"></i><h5 class="mt-2 text-light" style="font-size: 1rem;">${region.regionName}</h5><p class="small mb-1 text-light" style="font-size: 0.8rem;">金額增長: <span class="fw-bold">${region.amountGrowthRate.toFixed(1)}%</span></p><p class="small mb-0 text-light" style="font-size: 0.8rem;">ATV增長: <span class="fw-bold">${region.atvGrowthRate.toFixed(1)}%</span></p></div></div>`);});}
